@@ -42,9 +42,17 @@ const fail = (msg) => {
 };
 
 // 1. The repository's cases are the pinned package's cases, byte for byte.
-const pkgDir = dirname(fileURLToPath(import.meta.resolve("@delegus/conformance")));
-const pkgCases = join(pkgDir, "vectors", "cases");
-const pkgVersion = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version;
+// The engine module's own vector directory (`VECTORS_DIR`), so the cases are
+// checked against the engine actually run; the package's when not exported.
+const pkgDir = typeof mod.VECTORS_DIR === "string"
+  ? resolve(mod.VECTORS_DIR, engineIdx >= 0 ? ".." : ".")
+  : dirname(fileURLToPath(import.meta.resolve("@delegus/conformance")));
+const vecDir = typeof mod.VECTORS_DIR === "string" ? mod.VECTORS_DIR : join(pkgDir, "vectors");
+const pkgCases = join(vecDir, "cases");
+let pkgVersion = "unknown";
+for (const d of [pkgDir, resolve(pkgDir, ".."), resolve(pkgDir, "..", ".."), resolve(pkgDir, "..", "..", "..")]) {
+  try { pkgVersion = JSON.parse(readFileSync(join(d, "package.json"), "utf8")).version; break; } catch { /* try the parent */ }
+}
 const names = readdirSync(casesDir).filter((f) => f.endsWith(".json")).sort();
 const pkgNames = readdirSync(pkgCases).filter((f) => f.endsWith(".json")).sort();
 if (JSON.stringify(names) !== JSON.stringify(pkgNames)) fail(`case file list differs from @delegus/conformance@${pkgVersion}`);
@@ -53,7 +61,7 @@ for (const n of names) {
 }
 
 // 1b. The normalization sets too.
-const pkgSets = join(pkgDir, "vectors", "sets");
+const pkgSets = join(vecDir, "sets");
 for (const n of ["htu.json", "jcs.json", "jti.json"]) {
   if (!readFileSync(join(root, "vectors", "sets", n)).equals(readFileSync(join(pkgSets, n)))) fail(`sets/${n} differs from @delegus/conformance@${pkgVersion}`);
 }
@@ -108,7 +116,7 @@ for (const n of names) {
     fail(`${id}: ${diffs.join("; ")}`);
   }
 }
-if (names.length !== 40) fail(`expected 40 cases, found ${names.length}`);
+if (names.length !== 51) fail(`expected 51 cases, found ${names.length}`);
 
 console.log(`\nengine: ${engineIdx >= 0 ? engineModule : `@delegus/conformance@${pkgVersion}`} (coreImplementation)`);
 console.log(`${matched} of ${names.length} cases match on decision, reason, both layer results, all 24 checks, request_hash and principal; ${failures} mismatch(es)`);

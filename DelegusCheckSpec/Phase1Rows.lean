@@ -449,6 +449,26 @@ theorem tm08_revoked_denies {g : GrantF} {cred : String} (hg : parseGrant π req
   simp only [base, Env.grant, hg, p6Of, p6From, hs]
   split <;> simp_all
 
+/-- **Erratum 6: only a set bit is a revocation.** P6's rule reports
+    `AUTHORITY_REVOKED` exactly when the status store returned a credential
+    that verifies, is valid at `now` and has the Grant's bit set. -/
+theorem p6_revoked_iff {e : Env} {g : GrantF} (hg : e.grant = .ok g) :
+    base e .P6 = .fail .AUTHORITY_REVOKED ↔
+      ∃ cred, e.s.status g.statusUrl = .snapshot cred ∧
+        statusBit e.π e.tc e.clk.nowMs cred g.statusUrl g.statusIndex = some true := by
+  simp only [base, hg, p6Of, p6From]
+  split
+  · simp_all
+  · rename_i cred hst
+    split <;> simp_all [unusableStatusCode]
+
+/-- A usable credential, an unusable one, or no credential: P6 fails with
+    `AUTHORITY_REVOKED` or `SERVICE_UNAVAILABLE`, and nothing else. -/
+theorem p6_codes {e : Env} {r : Reason} (h : base e .P6 = .fail r) :
+    r = .AUTHORITY_REVOKED ∨ r = .SERVICE_UNAVAILABLE := by
+  have := base_codes e .P6 r h
+  simpa [codes] using this
+
 /-- TM-09: a `kid` marked compromised is DENY (T3). -/
 theorem tm09_compromised_denies {g : GrantF} {dv : Bool} {comp : List String} {doc : String}
     (hg : parseGrant π req.grant = .ok g) (hi : s.issuer g.issuer = .registered dv comp doc)

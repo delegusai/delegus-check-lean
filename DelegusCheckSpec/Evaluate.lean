@@ -38,7 +38,7 @@ def Env.action (e : Env) : Option Action := validateAction e.req.action
 /-- §6.3 `request_hash`: SHA-256 of the UTF-8 of `JCS(action)`. -/
 def Env.requestHash (e : Env) : Option String := (jcs e.req.action).map e.π.sha256
 /-- The replay operation for a Proof. -/
-def Env.query (e : Env) (p : ProofF) : ReplayQuery := replayQuery e.req.rp p.jti p.iat e.req.windowS
+def Env.query (e : Env) (p : ProofF) : ReplayQuery := replayQuery e.req.rp p.jti p.iat e.req.windowS e.clk.nowMs
 
 /-- A check with one reason code. -/
 def ok (b : Bool) (r : Reason) : Outcome := if b then .pass else .fail r

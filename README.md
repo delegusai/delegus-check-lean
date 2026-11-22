@@ -10,8 +10,7 @@ a precise model in Lean 4, a tool that checks mathematical proofs by
 machine, and proves properties of them that hold for every possible input,
 not only the cases we happened to test.
 
-Phases 0 to 6 are done; only the one-time-use window theorems wait, on
-erratum 4. Phase 0 proved the order of the checks, the yes-or-no answer and the reason given for a no. Phase 1 writes every one of
+Phases 0 to 6 of the plan are done, with errata 5 and 6 applied. Phase 0 proved the order of the checks, the yes-or-no answer and the reason given for a no. Phase 1 writes every one of
 the 24 checks as a real rule, field by field, and proves what the
 specification promises about the whole decision. Phase 2 ties the model to
 the real engine: the published conformance runner runs the model as an
@@ -20,7 +19,8 @@ proves that an old decision re-checks the same, years later. Phase 4 (the
 parts that do not depend on the replay window) proves where the service
 reads and writes its stores during a decision. Phase 5 proves that a
 cancelled Grant stays cancelled: once a revocation has been confirmed,
-every later check of that Grant, on any server, is a no. Phase 6 writes two of
+every later check of that Grant, on any server, is a no, and that a
+Proof is accepted at most once. Phase 6 writes two of
 the building blocks the model used to take on trust, the address
 clean-up for the Proof's target URL and the canonical form of the Action
 before it is fingerprinted, in Lean as well, and checks them against the
@@ -72,7 +72,20 @@ state of the service, and every possible answer from the cryptography:
    first fourteen checks all passed, so a cancelled, forged or expired
    request never uses up a Proof. A request that is both cancelled and
    replayed is refused as cancelled (erratum 1).
-10. **A cancelled Grant stays cancelled** (§7). Once Delegus has confirmed a
+10. **A Proof is accepted at most once** (§5.3 T5, erratum 5). However many
+    times the same Proof is presented to a service, through one replay
+    store, at most one of those checks says yes. A second use is refused
+    either because the first use's record is still there, or because the
+    store's clock is too far ahead of the verifier's and the store refuses
+    to record anything (fail closed). This assumes the store behaves as one
+    ordered ledger and that the second use's Proof window is no larger
+    than the first's.
+11. **"Revoked" means revoked** (erratum 6). The reason `AUTHORITY_REVOKED`
+    is given only for a status list that checks out, is valid at the time
+    of the decision and has the Grant's entry set. A status list that is
+    missing, unreadable, unsigned, out of date or otherwise unusable gives
+    `SERVICE_UNAVAILABLE`: still a no, with the true reason.
+12. **A cancelled Grant stays cancelled** (§7). Once Delegus has confirmed a
     revocation, every verification of that Grant that starts afterwards, on
     any server, with any cache, is refused; if nothing else was wrong, the
     reason given is "revoked", even when the same Proof is also being
@@ -80,7 +93,7 @@ state of the service, and every possible answer from the cryptography:
     assumes the stores behave as one ordered ledger (the model is one
     sequence of operations) and that Delegus's status-list signer publishes
     correct, current lists.
-11. **The protections the specification lists (§13.1) hold in the model.**
+13. **The protections the specification lists (§13.1) hold in the model.**
    A Proof sent to a different service, an expired or not-yet-valid Grant, a
    cancelled Grant, a compromised key, an unknown or unverified issuer, a
    status list not signed by Delegus, and a service the Grant excludes are
@@ -106,41 +119,42 @@ foundations; the full audit is under [Axiom audit](#axiom-audit).
   does not prove that the hosted Redis and Postgres behave that way, and a
   verification already in flight when a revocation completes is not
   covered (the specification does not claim it is).
-- **One-time use (replay).** The replay check is modelled as the frozen
-  specification states it, and an unavailable replay store is proven to give
-  a no. The theorem that a Proof is accepted at most once waits for the
-  replay erratum the owner has chosen (erratum 4), whose text is being
-  drafted.
+- **The replay store and its clock.** The one-time-use proof assumes the
+  replay store behaves like one ordered ledger and keeps every record until
+  its stated expiry. It does not prove that the hosted Redis does, or that
+  its clock check runs atomically with the write, as erratum 5 requires.
 - **That the real engine equals the model.** The engine is TypeScript. The
-  two are tied together by running the 40 published test cases, and over
-  four thousand altered versions of them, through both and failing if they
+  two are tied together by running the 51 published test cases, and over
+  nine thousand altered versions of them, through both and failing if they
   differ in any way. That is strong testing, not a proof that the code
   equals the model.
 
-## The 40 published test cases
+## The 51 published test cases
 
-The 40 conformance cases of `@delegus/conformance` 0.4.0 (3 ALLOW cases,
-one DENY case for every reason code, and cases that pin particular
-readings) run through both the model and the reference engine. The model
+The 51 conformance cases of `@delegus/conformance` 0.6.0 (vector-set hash
+`sha256:0f5e019b3679beb0cc1ab30eab065b6903231079be812c84e331c169fe0e2562`:
+ALLOW cases, one DENY case for every reason code, cases that pin
+particular readings, and the cases errata 5 and 6 added, including
+repeated uses of one Proof through one replay store) run through both the model and the reference engine. The model
 computes every check itself, from the case's inputs and a small set of
 cryptographic and decoding facts. On every case the two agree:
 
 ```
-40 of 40 cases match on decision, reason, both layer results, all 24 checks, request_hash and principal; 0 mismatch(es)
+51 of 51 cases match on decision, reason, both layer results, all 24 checks, request_hash and principal; 0 mismatch(es)
 ```
 
-The same 40 cases run inside `lake test`, against each case's expected
+The same 51 cases run inside `lake test`, against each case's expected
 result:
 
 ```
-40 of 40 cases match on decision, reason, both layers and all 24 checks; 0 failure(s)
+51 of 51 cases match on decision, reason, both layers and all 24 checks; 0 failure(s)
 ```
 
 The published conformance runner, with the model plugged in as the
 implementation under test:
 
 ```
-PASS: 40/40 vectors (0 receipts byte-identical), 3 sets passed, 0 skipped, 40/40 committed receipts re-verify offline
+PASS: 51/51 vectors (0 receipts byte-identical), 3 sets passed, 0 skipped, 51/51 committed receipts re-verify offline
 ```
 
 (The model signs no receipts, so none are compared. The three sets are
@@ -150,16 +164,18 @@ own rules`.)
 
 ## Altered cases
 
-Forty cases are forty points. The mutation differential changes each case
+Fifty-one cases are fifty-one points. The mutation differential changes each case
 in about a hundred small ways (the clock, the Proof window, the relying
 party, every Action field, the service state, the trusted keys, tampered
 bytes, and Proofs re-signed with the cases' published test keys so a
-changed Action or time reaches the later checks) and runs every version
+changed Action or time reaches the later checks, and earlier uses of the
+same Proof at the window's edges with the store's clock from far behind
+to 5 seconds ahead) and runs every version
 through both the model and the engine. There is no expected answer; the
 two must simply agree:
 
 ```
-4303 of 4303 mutants agree on decision, reason, both layer results, all 24 checks, request_hash, principal and the operation trace; 0 disagreement(s)
+9359 of 9359 mutants agree on decision, reason, both layer results, all 24 checks, request_hash, principal and the operation trace; 0 disagreement(s)
 ```
 
 The operation trace is the list of service operations each side performed
@@ -167,8 +183,7 @@ The operation trace is the list of service operations each side performed
 with which arguments). The engine's comes from its in-memory service's call
 log; the model's from a recording run of its effectful evaluator.
 
-The mutants cover every reason code and both answers (108 ALLOW, 4195
-DENY).
+The mutants cover every reason code and both answers.
 
 The model's own `htu` clean-up and JCS are also compared with the engine's
 on generated inputs (a fixed-seed generator: URIs with every kind of case,
@@ -193,14 +208,30 @@ manager) and, for the engine comparison, Node.js 22 or later.
 git clone https://github.com/delegusai/delegus-check-lean.git
 cd delegus-check-lean
 lake build                      # the model, the proofs and the case runner
-lake test                       # the 40 cases through the model, against each case's expected result
+lake test                       # the 51 cases through the model, against each case's expected result
 ./scripts/check-axioms.sh       # what every theorem rests on
-npm ci --ignore-scripts         # the reference engine, pinned: @delegus/conformance 0.4.0
+npm ci --ignore-scripts         # the lowering's primitives: @delegus/core, via @delegus/conformance
 node scripts/compare.mjs        # model and engine, case by case
 npx --no-install delegus-conformance --impl ./bridge/lean-impl.mjs   # the published runner, with the model plugged in
-node scripts/differential.mjs   # model and engine on about 4,300 altered cases
+node scripts/differential.mjs   # model and engine on about 9,400 altered cases
 node scripts/primitives-differential.mjs   # the model's htu and JCS against the engine's
 ```
+
+The cases are those of `@delegus/conformance` 0.6.0. Until that release
+is on npm (the pinned npm release is 0.4.0, with 40 cases), run the engine
+commands against a source checkout of the engine with
+`scripts/engine-hook.mjs`:
+
+```sh
+export DELEGUS_ENGINE_DIR=/path/to/delegus     # a checkout with packages/core and packages/conformance
+node --import ./scripts/engine-hook.mjs scripts/compare.mjs
+node --import ./scripts/engine-hook.mjs "$DELEGUS_ENGINE_DIR/packages/conformance/src/cli.ts" --impl ./bridge/lean-impl.mjs
+node --import ./scripts/engine-hook.mjs scripts/differential.mjs
+node --import ./scripts/engine-hook.mjs scripts/primitives-differential.mjs
+```
+
+The results above were produced that way, against the engine at the
+commit that applies errata 5 and 6.
 
 `lake build` fails if any proof is wrong. Every other command exits
 non-zero on any mismatch. `compare.mjs` also fails
@@ -225,7 +256,9 @@ To print the model's answer for each case, one JSON object per line:
 | `DelegusCheckSpec/Theorems.lean` | Phase 0 theorems |
 | `DelegusCheckSpec/Inputs.lean` | Phase 1 inputs: `Request`, `Clock`, `IssuerLookup`, `StatusLookup`, `Snapshots`, `TrustConfig`, `ReplayAnswer`, and the primitives `Prims` |
 | `DelegusCheckSpec/Syntax.lean` | `did:web`, DID URLs, ULID and Grant ids, `jti`, HTTP methods, currencies, `sha256:` references, resource globs (§3.3), all in Lean |
-| `DelegusCheckSpec/Readings.lean` | Every reading where the specification is silent, in one place; the replay operation (`replayQuery`), ready for erratum 4 |
+| `DelegusCheckSpec/Readings.lean` | Every reading where the specification is silent, in one place; the erratum 5 replay operation (`replayQuery`) and the erratum 6 P6 rule |
+| `DelegusCheckSpec/Replay.lean` | Erratum 5: the replay store, verifications against it, and the at-most-one-ALLOW theorem |
+| `scripts/engine-hook.mjs` | Runs the scripts against a source checkout of the engine |
 | `DelegusCheckSpec/Grant.lean` | P1 (`parseGrant`, §3, field by field) and P8 (`parseProof`, §4) |
 | `DelegusCheckSpec/Rules.lean` | P2 (`findKey`), P6 (`statusOk`), P7, P15 (`validateAction`), P16–P20 (`authorize`) |
 | `DelegusCheckSpec/Evaluate.lean` | `base` (each check's rule), `table` (declarative), `staged` (engine-shaped), `evaluate`, attribution and `request_hash` |
@@ -243,11 +276,11 @@ To print the model's answer for each case, one JSON object per line:
 | `scripts/differential.mjs` | The mutation differential |
 | `scripts/primitives-differential.mjs` | The model's `htu` and JCS against the engine's, on generated inputs |
 | `DelegusCheckSpec/Htu.lean`, `DelegusCheckSpec/Jcs.lean` | Phase 6: the §4.3 `htu` canonical form and RFC 8785 JCS, in Lean |
-| `vectors/sets/` | The `htu`, JCS and `jti` sets, byte for byte from `@delegus/conformance` 0.4.0 |
+| `vectors/sets/` | The `htu`, JCS and `jti` sets, byte for byte from `@delegus/conformance` 0.6.0 |
 | `.github/workflows/ci.yml` | CI on push and nightly against the latest `@delegus/conformance`; off until the repository variable `CI_ENABLED` is `true` |
-| `scripts/compare.mjs` | Model against the reference engine, live, on all 40 cases |
+| `scripts/compare.mjs` | Model against the reference engine, live, on all 51 cases |
 | `scripts/check-axioms.sh` | `#print axioms` for every theorem, failing on anything but the standard three |
-| `vectors/cases/` | The 40 cases, byte for byte from `@delegus/conformance` 0.4.0 |
+| `vectors/cases/` | The 51 cases, byte for byte from `@delegus/conformance` 0.6.0 |
 | `vectors/lowered/` | Their primitive facts, generated by `scripts/lower.mjs` |
 
 No Mathlib, no other dependency: the model uses only Lean's core library,
@@ -364,6 +397,30 @@ The hypotheses are explicit: the history is one sequence of atomic
 operations (linearizability, by the model's shape), and `FaithfulSigner`:
 the credential Delegus's signer issues for a list is usable at the
 verification's clock and keys and shows its bits correctly.
+
+Erratum 5 statements (one-time use, §5.3 T5):
+
+| Theorem | Statement |
+|---|---|
+| `replay_denied` | the store holds the Proof's key up to `E = iat·1000 + w1 + 5000`; a later verification of a Proof with the same `(rp_did, jti)` and `iat` under a window `w2 ≤ w1` is DENY: if its write reaches the store at most 4 000 ms (store clock) after its `now`, the key is present (`PROOF_REPLAYED`), otherwise the store refuses (`SERVICE_UNAVAILABLE`) |
+| `at_most_one_allow` | in any history through one replay store, an earlier and a later verification of Proofs with the same relying party, `jti` and `iat`, the later window no larger, are not both ALLOW |
+| `allow_writes` | an ALLOW leaves its key in the store until `iat·1000 + w + 5000` |
+| `t5_pass_write`, `writeOf_of_mem`, `present_storeAfter` | T5 passing means the write was made and answered OK; records persist through any later operations |
+
+The hypotheses, in plain words: the history is one sequence of atomic
+store operations, and a record is kept until its expiry (the model's
+shape); the two Proofs have the same relying party, `jti` and `iat` (a
+`jti` names one Proof); the later Proof's window is no larger than the
+earlier's. The 1 000 ms write timeout and the store's 4 000 ms clock check
+are part of the model, not hypotheses: the theorem holds for any delay and
+any store clock.
+
+Erratum 6 statements (P6):
+
+| Theorem | Statement |
+|---|---|
+| `p6_revoked_iff` | P6's rule is `AUTHORITY_REVOKED` exactly when the status store returned a credential that verifies, is valid at `now` and has the Grant's bit set |
+| `p6_codes` | P6 fails only with `AUTHORITY_REVOKED` or `SERVICE_UNAVAILABLE` |
 
 Phase 0 statements (the kernel, for any outcomes):
 
@@ -487,6 +544,8 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.tm06_action_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm07_outside_window_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm08_revoked_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.p6_revoked_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.p6_codes' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm09_compromised_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm11_unknown_issuer_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm11_unverified_issuer_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -495,6 +554,15 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.findKey_safe' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm01_grant_signed' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm03_proof_signed_by_agent' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.opsOf_replay_query' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.writeOf_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.t5_pass_write' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.present_mono' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.present_after' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.present_storeAfter' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.allow_writes' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.replay_denied' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.at_most_one_allow' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.storeInv_empty' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.matchesEntry_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.revoke_idempotent' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -563,7 +631,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
-OK: 181 theorems, standard axioms only
+OK: 192 theorems, standard axioms only
 ```
 
 `propext`, `Quot.sound` and `Classical.choice` are Lean's three standard
@@ -589,7 +657,7 @@ lowered facts, and runs `evaluate`. Nothing is read from the case's
 expected results except by the test driver, which compares against them.
 
 `scripts/compare.mjs` runs the reference engine live through
-`coreImplementation` from `@delegus/conformance` 0.4.0 and compares the
+`coreImplementation` from `@delegus/conformance` and compares the
 decision, the reason, both layer results, all 24 outcomes, `request_hash`
 and the attributed Principal. `--engine <module>` points it at another
 module exporting `coreImplementation`.
@@ -603,11 +671,10 @@ the model with the runner's own comparison.
 the model on all of them in one batch, and compares. It also runs each
 mutant through `@delegus/core`'s `evaluate` with the conformance package's
 in-memory service and compares that service's call log with the model's
-operation trace (with `--engine`, the trace still comes from the pinned
-`@delegus/core`). A mutant the engine
-rejects as invalid service input (it throws by design, for example a Proof
-window outside 1–300 seconds) is counted and skipped: 40 in the current
-run.
+operation trace. Cases with earlier uses run each earlier use through the
+same replay store first, on both sides. A mutant the engine rejects as
+invalid service input (it throws by design, for example a Proof window
+outside 1–300 seconds) is counted and skipped: 45 in the current run.
 
 ### CI
 
@@ -620,11 +687,12 @@ every job runs only when the repository variable `CI_ENABLED` is `true`.
 
 ### Source of the cases
 
-`vectors/cases/` holds the 40 `delegus-base-v1` cases of
+`vectors/cases/` holds the 51 `delegus-base-v1` cases of
 [`@delegus/conformance`](https://www.npmjs.com/package/@delegus/conformance)
-version 0.4.0 (npm integrity
-`sha512-jZQUL1oRaD4WQXWpNCTFYVQgcsPHT9SYMyImiUyliUN8J41XgrsEemIGzMbuz7GLiXSRjtdG7R3+BFl8gKkH9A==`),
-byte for byte; `scripts/compare.mjs` fails if they ever differ. They use
+version 0.6.0 (vector-set hash
+`sha256:0f5e019b3679beb0cc1ab30eab065b6903231079be812c84e331c169fe0e2562`),
+byte for byte; `scripts/compare.mjs` fails if they differ from the
+engine's own set. They use
 test keys and non-production identifiers only (`did:web:acme.example`,
 `did:web:test.delegus.example`).
 
@@ -657,23 +725,14 @@ points below changes or extends the protocol.
   malformed header is reported first, then `parentGrant`, then the payload
   rules.
 - **`jti` format** (`isJti`). §4.2 says "MUST be 22–64 ASCII characters";
-  the engine, and so the model, accepts only the base64url alphabet, the
-  SHOULD encoding. This is narrower than the text.
+  the owner's clarification published with erratum 6 states the base64url
+  alphabet with no padding, which is what the engine and the model accept.
 
-**Owner ruling waiting for erratum 5** (`unusableStatusCode`):
-
-- **An unusable status credential** (bad signature, wrong URL, outside its
-  own validity, index outside the list). The frozen text and the published
-  engine give `AUTHORITY_REVOKED` at P6. The owner ruled that such a
-  credential means current revocation state "cannot be established" (§7),
-  so the answer is `SERVICE_UNAVAILABLE`. That changes engine behaviour and
-  goes in as erratum 5 with new vectors; until they land the switch stays at
-  the frozen behaviour, so the model matches the published cases. Every
-  proof holds with either setting. With it flipped, 121 of the 4,303
-  mutants change their reason from `AUTHORITY_REVOKED` to
-  `SERVICE_UNAVAILABLE`, all of them unusable-credential cases (tampered,
-  garbage or untrusted-key credentials, and a clock moved to before the
-  credential is valid); none of the 40 published cases does.
+**Applied errata found by this model.** Erratum 5 (the replay key could
+expire at the last instant P13 accepts) and erratum 6 (an unusable status
+credential was reported as a revocation) both came out of this work. In
+the model, erratum 5 is `replayQuery` and the store's clock check in
+`setNX`; erratum 6 is `unusableStatusCode`.
 
 **Found while proving the historical clock (Phase 3).** Offline
 re-verification (§6.4) is described as needing the receipt, the Delegus
@@ -707,8 +766,7 @@ engine is off.
    (§7 names the code, not the check) and at T1 when the issuer registry
    cannot be read (the specification names no code).
 5. The replay operation (T5) runs once P1–P14 pass, so a request denied at
-   T2 or T3 still consumes its `jti` (plan §1.7 item 6). Its key expiry is
-   the frozen `PX 2 × window_ms`, isolated in `replayQuery` for erratum 4.
+   T2 or T3 still consumes its `jti` (plan §1.7 item 6).
 6. Integers follow ECMAScript: a JSON number such as `1.0` counts as the
    integer 1. `did:web` syntax is the engine's: lowercase host, optional
    `%3A` port, optional path segments. The default Proof window is 60

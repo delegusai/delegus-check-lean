@@ -61,6 +61,7 @@ export function lower(file) {
   for (const j of jws) { strings(j.header, all); strings(j.payload, all); }
   if (docValue !== null) strings(docValue, all);
   all.add(input.evaluated_at);
+  for (const t of st.replay.earlier_uses ?? []) all.add(t);
 
   const didKey = [];
   const multibase = [];

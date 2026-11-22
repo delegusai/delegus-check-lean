@@ -47,7 +47,7 @@ async function engineTrace(input) {
   await coreEvaluate(mod.evaluateInputFromVector(input, svc));
   return svc.calls.map((c) => c.hook === "issuer" ? ["issuer", c.args[0]]
     : c.hook === "statusList" ? ["status", c.args[1]]
-    : ["replay", c.args[0], c.args[1], "PX", c.args[2]]);
+    : ["replay", c.args[0], c.args[1], "PXAT", c.args[2]]);
 }
 
 const PROTOCOL = Array.from({ length: 20 }, (_, i) => `P${i + 1}`);
@@ -138,6 +138,28 @@ function mutations(input) {
     x.service.status_list_keys = { [kid]: Object.values(input.service.receipt_keys)[0] ?? "AAAA" };
   });
   add("replay=unavailable", (x) => { x.state.replay.unavailable = true; });
+  // Erratum 5: earlier uses of the same request through the same store, store lag and store clock.
+  const w = (input.proof_window_seconds ?? 60) * 1000;
+  const iatMs = proofPayload && typeof proofPayload.iat === "number" ? proofPayload.iat * 1000 : now;
+  const earlier = [[], [now], [now - 1_000], [now - 60_000], [iatMs - w], [iatMs - w, iatMs], [iatMs + w + 5_001]];
+  const lags = [0, 999, 1_018, 3_999, 4_000, 4_001, 5_000, -5_000, -100_000];
+  for (const e of earlier) {
+    for (const lag of lags) {
+      add(`earlier=${e.map((t) => t - now).join("/")}+lag=${lag}`, (x) => {
+        if (e.length > 0) x.state.replay.earlier_uses = e.map(iso);
+        x.state.replay.store_lag_ms = lag;
+      });
+    }
+  }
+  for (const final of [iatMs - w, iatMs + w, iatMs + w + 1]) {
+    for (const lag of [0, 1_018, 4_000, 4_001]) {
+      add(`edge:first=iat-w,final=${final - iatMs},lag=${lag}`, (x) => {
+        x.evaluated_at = iso(final);
+        x.state.replay.earlier_uses = [iso(iatMs - w)];
+        x.state.replay.store_lag_ms = lag;
+      });
+    }
+  }
   if (proofPayload && typeof proofPayload.jti === "string") add("replay=consumed", (x) => { x.state.replay.consumed = [proofPayload.jti]; });
   add("replay=other-consumed", (x) => { x.state.replay.consumed = ["AAAAAAAAAAAAAAAAAAAAAA"]; });
   add("grant=tampered-sig", (x) => { x.grant = flipLast(input.grant); });

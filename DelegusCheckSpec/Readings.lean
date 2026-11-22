@@ -20,7 +20,7 @@ namespace DelegusCheck
 
 open Lean (Json)
 
-/-- **Engine reading, owner-confirmed 22 Nov 2026: `merchantCategory`.** §3.3 defines it for
+/-- **`merchantCategory`** (owner-confirmed; clarified with erratum 6). §3.3 defines it for
     `commerce:purchase`, but the Action wire fields (§4.3) carry no
     category, so it cannot be evaluated. The engine treats it as a key this
     version does not evaluate, so P17 fails with `UNKNOWN_CONSTRAINT`
@@ -45,36 +45,37 @@ def p1Code {α : Type} (headerOk hasParentGrant : Bool) (payload : Option α) : 
     | some a => .ok a
     | none => .error .GRANT_MALFORMED
 
-/-- **Reading, owner-ruled 22 Nov 2026, switch pending erratum 5: an
-    unusable status credential.** When a status credential is present but
-    unusable (bad signature, wrong URL, outside its own validity, index out
-    of range), the frozen text and the published engine give
-    `AUTHORITY_REVOKED` (§5.2 lists only that code for P6). The owner ruled
-    that this means current revocation state "cannot be established" (§7),
-    so P6 gives `SERVICE_UNAVAILABLE`; that changes engine behaviour and
-    lands as erratum 5 with new vectors. Until then this stays at the
-    frozen behaviour so the model matches the published conformance cases;
-    flip it to `SERVICE_UNAVAILABLE` when erratum 5's vectors land. -/
-def unusableStatusCode : Reason := .AUTHORITY_REVOKED
+/-- **Erratum 6: an unusable status credential.** When a status credential
+    is present but unusable (bad signature, key, URL or issuer, not yet valid
+    or expired at `now`, index outside the list), current revocation state
+    cannot be established (§7), so P6 is false with `SERVICE_UNAVAILABLE`.
+    Only a verified credential, valid at `now`, with the bit set is
+    `AUTHORITY_REVOKED`. (Before erratum 6 the frozen text and the engine
+    gave `AUTHORITY_REVOKED` here; the decision was DENY either way.) -/
+def unusableStatusCode : Reason := .SERVICE_UNAVAILABLE
 
-/-! `jti` format (§4.2) — **engine reading, owner-confirmed 22 Nov 2026.**
-The text says "22–64 ASCII characters"; the engine, and so the model
-(`isJti` in `Syntax.lean`), accepts only the base64url alphabet, the SHOULD
-encoding and the only checkable proxy for ≥ 128 random bits. This is
-narrower than the text. -/
+/-! `jti` format (§4.2). The text says "22–64 ASCII characters"; the owner's
+clarification published with erratum 6 (21 Nov 2026) states the base64url
+alphabet with no padding, which is what the engine and the model (`isJti`
+in `Syntax.lean`) accept. -/
 
-/-! ## Replay key and expiry (T5)
+/-! ## Replay key and expiry (T5, erratum 5)
 
-The frozen specification (§5.3): `SET replay:{rp_did}:{jti} 1 NX PX
-{2 × window_ms}`. The owner has chosen erratum 4, an absolute expiry
-`PXAT(iat·1000 + window_ms + margin_ms)`; its text is being drafted. Only
-`replayQuery` changes when it lands. -/
+The frozen text (§5.3) wrote `SET replay:{rp_did}:{jti} 1 NX PX {2 ×
+window_ms}`, a key that could expire at `iat + window`, the last instant
+P13 accepts. Erratum 5 makes the expiry absolute: `SET … NX PXAT
+{iat_ms + window_ms + margin_ms}` with `margin_ms` = 5 000, the key present
+at every store instant up to and including that instant. The write carries
+the verifier's `now`; the store refuses it, `SERVICE_UNAVAILABLE`, when its
+own clock reads more than 4 000 ms ahead of that `now`, checked in the same
+atomic operation. A write not acknowledged within 1 000 ms is
+`SERVICE_UNAVAILABLE`. -/
 
 /-- When a replay key expires. -/
 inductive Expiry
-  /-- Relative: `PX ms` (frozen §5.3). -/
+  /-- Relative: `PX ms` (the frozen §5.3 text, before erratum 5). -/
   | px (ms : Nat)
-  /-- Absolute: `PXAT ms` (erratum 4, pending text). -/
+  /-- Absolute: `PXAT ms` (erratum 5). -/
   | pxat (ms : Int)
   deriving DecidableEq, Repr
 
@@ -83,11 +84,26 @@ structure ReplayQuery where
   rp : Did
   jti : String
   expiry : Expiry
+  /-- The verifier's `now` for the decision (erratum 5), for the store's
+      clock check. -/
+  nowMs : Int
   deriving DecidableEq, Repr
 
-/-- The frozen §5.3 operation for an RP, a `jti` and a Proof window. The
-    Proof's `iat` is passed so the erratum 4 form can be dropped in. -/
-def replayQuery (rp : Did) (jti : String) (_iat : Int) (windowS : Nat) : ReplayQuery :=
-  { rp, jti, expiry := .px (2 * windowS * 1000) }
+/-- Erratum 5's fixed margin, in milliseconds. -/
+def replayMarginMs : Int := 5000
+
+/-- Erratum 5: the write times out after this many milliseconds, giving
+    `SERVICE_UNAVAILABLE`. -/
+def replayWriteTimeoutMs : Nat := 1000
+
+/-- Erratum 5: the store refuses a write when its clock reads more than this
+    many milliseconds ahead of the verifier's `now` (`margin_ms` minus the
+    write timeout). -/
+def replayMaxStoreAheadMs : Int := replayMarginMs - replayWriteTimeoutMs
+
+/-- Erratum 5's T5 operation for an RP, a `jti`, the Proof's `iat` (seconds),
+    the Proof window P13 used (seconds) and the verifier's `now`. -/
+def replayQuery (rp : Did) (jti : String) (iat : Int) (windowS : Nat) (nowMs : Int) : ReplayQuery :=
+  { rp, jti, expiry := .pxat (iat * 1000 + (windowS : Int) * 1000 + replayMarginMs), nowMs }
 
 end DelegusCheck

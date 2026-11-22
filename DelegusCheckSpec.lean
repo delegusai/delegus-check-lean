@@ -19,3 +19,4 @@ import DelegusCheckSpec.Effects
 import DelegusCheckSpec.Revocation
 import DelegusCheckSpec.Htu
 import DelegusCheckSpec.Jcs
+import DelegusCheckSpec.Replay

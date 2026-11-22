@@ -98,7 +98,19 @@ def parseFacts (j : Json) : Except String Facts := do
 
 structure Loaded where
   id : String
-  env : Env
+  π : Prims
+  req : Request
+  s : Snapshots
+  tc : TrustConfig
+  nowMs : Int
+  /-- The replay store as the case describes it (erratum 5): keys already
+      consumed, whether it is down, how far after the verifier's `now` it
+      sees each write (`store_lag_ms`), and the earlier uses of the same
+      request (`earlier_uses`), in order. -/
+  consumed : List String
+  replayDown : Bool
+  storeLagMs : Int
+  earlierUses : List Int
   /-- The case's expected values, read only by the test driver. -/
   expected : Json
 
@@ -148,13 +160,13 @@ def loadCase (caseText loweredText : String) : Except String Loaded := do
   let rs ← st.getObjVal? "replay"
   let replayDown ← rs.getObjValAs? Bool "unavailable"
   let consumed ← rs.getObjValAs? (Array String) "consumed"
-  let rp := req.rp
-  let ρ : ReplayQuery → ReplayAnswer := fun q =>
-    if replayDown then .unavailable
-    else if q.rp == rp && consumed.contains q.jti then .replayed
-    else .ok
-  return { id, env := ⟨π, req, ⟨issuer, status⟩, tc, ⟨nowMs⟩, ρ⟩,
-           expected := (c.getObjVal? "expected").toOption.getD .null }
+  let storeLagMs := (rs.getObjValAs? Int "store_lag_ms").toOption.getD 0
+  let earlier := ((rs.getObjValAs? (Array String) "earlier_uses").toOption.getD #[]).toList
+  let earlierUses ← earlier.mapM fun t => match π.rfc3339 t with
+    | some ms => pure ms
+    | none => throw s!"{id}: earlier use {t} has no time fact"
+  return { id, π, req, s := ⟨issuer, status⟩, tc, nowMs, consumed := consumed.toList, replayDown,
+           storeLagMs, earlierUses, expected := (c.getObjVal? "expected").toOption.getD .null }
 
 /-! ## Output -/
 
@@ -195,15 +207,26 @@ def resultJson (id : String) (ev : Evaluation) (trace : List Op := []) : Json :=
     ("trace", Json.arr (trace.map opJson).toArray)
   ]
 
-def runLoaded (l : Loaded) : Evaluation :=
-  let e := l.env
-  evaluate e.π e.req e.s e.tc e.clk e.ρ
+/-- The verification at verifier instant `now`, its write reaching the store
+    `store_lag_ms` later on the store's clock. -/
+def Loaded.at (l : Loaded) (now : Int) : RVerify :=
+  { π := l.π, req := l.req, s := l.s, tc := l.tc, clk := ⟨now⟩, storeAt := now + l.storeLagMs,
+    delayMs := 0, down := l.replayDown }
+
+/-- The store before the case's verification: the consumed keys (kept just
+    past `now`, as the reference runner does), then each earlier use of the
+    same request run through the model in order. -/
+def Loaded.store (l : Loaded) : ReplayStore :=
+  let st0 : ReplayStore := ⟨l.consumed.map fun j => ((l.req.rp, j), l.nowMs + 1)⟩
+  l.earlierUses.foldl (fun st t => (l.at t).after st) st0
+
+def runLoaded (l : Loaded) : Evaluation := (l.at l.nowMs).eval l.store
 
 /-- The operations the evaluation performs, from the recording run of the
     effectful evaluator. -/
 def traceLoaded (l : Loaded) : List Op :=
-  let e := l.env
-  traceOf e.π e.req e.s e.tc e.clk e.ρ
+  let v := l.at l.nowMs
+  traceOf v.π v.req v.s v.tc v.clk (respond l.store v)
 
 /-- The `.json` files of a directory, sorted by name. -/
 def caseFiles (dir : System.FilePath) : IO (Array System.FilePath) := do

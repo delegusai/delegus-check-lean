@@ -6,7 +6,7 @@ model has to choose, in one place, so each can be swapped without touching
 the rest of the model. Each definition says whose reading it is and its
 status.
 
-Decided, and therefore not here as open readings:
+Decided by the owner, and therefore not readings:
 * Erratum 3 (unusable Ed25519 keys) is in scope for v0.2 (owner, 22 Nov
   2026). It is part of the protocol: `Prims.keyOk` is applied at P1 (the
   Agent `did:key`), P2 (the DID-document key) and P8 (the Proof `iss`).
@@ -20,7 +20,7 @@ namespace DelegusCheck
 
 open Lean (Json)
 
-/-- **Reading, pending owner: `merchantCategory`.** §3.3 defines it for
+/-- **Engine reading, owner-confirmed 22 Nov 2026: `merchantCategory`.** §3.3 defines it for
     `commerce:purchase`, but the Action wire fields (§4.3) carry no
     category, so it cannot be evaluated. The engine treats it as a key this
     version does not evaluate, so P17 fails with `UNKNOWN_CONSTRAINT`
@@ -31,7 +31,7 @@ def knownConstraintKeys : String → List String
   | "api:call" => ["methods"]
   | _ => []
 
-/-- **Reading, pending owner: which P1 code wins.** When a Grant both
+/-- **Engine reading, owner-confirmed 22 Nov 2026: which P1 code wins.** When a Grant both
     carries `parentGrant` and is malformed in another way, §3.2 and §5.2 do
     not say which code is reported. The engine decides in this order: a
     malformed JOSE header is `GRANT_MALFORMED`; then `parentGrant` present is
@@ -44,6 +44,24 @@ def p1Code {α : Type} (headerOk hasParentGrant : Bool) (payload : Option α) : 
   else match payload with
     | some a => .ok a
     | none => .error .GRANT_MALFORMED
+
+/-- **Reading, owner-ruled 22 Nov 2026, switch pending erratum 5: an
+    unusable status credential.** When a status credential is present but
+    unusable (bad signature, wrong URL, outside its own validity, index out
+    of range), the frozen text and the published engine give
+    `AUTHORITY_REVOKED` (§5.2 lists only that code for P6). The owner ruled
+    that this means current revocation state "cannot be established" (§7),
+    so P6 gives `SERVICE_UNAVAILABLE`; that changes engine behaviour and
+    lands as erratum 5 with new vectors. Until then this stays at the
+    frozen behaviour so the model matches the published conformance cases;
+    flip it to `SERVICE_UNAVAILABLE` when erratum 5's vectors land. -/
+def unusableStatusCode : Reason := .AUTHORITY_REVOKED
+
+/-! `jti` format (§4.2) — **engine reading, owner-confirmed 22 Nov 2026.**
+The text says "22–64 ASCII characters"; the engine, and so the model
+(`isJti` in `Syntax.lean`), accepts only the base64url alphabet, the SHOULD
+encoding and the only checkable proxy for ≥ 128 random bits. This is
+narrower than the text. -/
 
 /-! ## Replay key and expiry (T5)
 

@@ -1,16 +1,26 @@
 name: Delegus Check Lean CI
 
+# Disabled while the repository is private: every job runs only when the
+# repository variable CI_ENABLED is "true". Enable by setting it
+# (Settings → Secrets and variables → Actions → Variables) once the
+# repository is public, where standard runners cost nothing.
+
 on:
   push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"   # nightly, against the latest @delegus/conformance
 
 jobs:
-  lean:
+  pinned:
+    # Every push: the proofs, the axiom audit, and the model against the
+    # pinned reference engine (@delegus/conformance 0.4.0, package-lock.json).
+    if: vars.CI_ENABLED == 'true' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # lake build, then lake test (the 40 cases through the kernel)
+      # lake build, then lake test (the 40 cases through the model)
       - uses: leanprover/lean-action@v1
         with:
           test: true
@@ -22,3 +32,31 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Model versus reference engine, 40 cases
         run: node scripts/compare.mjs
+      - name: Conformance runner with the Lean model as the implementation
+        run: npx --no-install delegus-conformance --impl ./bridge/lean-impl.mjs
+      - name: Mutation differential
+        run: node scripts/differential.mjs
+
+  latest:
+    # Nightly: the same model against the latest published reference engine
+    # and vector set, so an engine release that changes behaviour turns this red.
+    if: vars.CI_ENABLED == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: leanprover/lean-action@v1
+        with:
+          test: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm install --no-save --ignore-scripts @delegus/conformance@latest
+      - name: Installed versions
+        run: npm ls @delegus/conformance @delegus/core
+      - name: Conformance runner (latest vectors) with the Lean model as the implementation
+        run: npx --no-install delegus-conformance --impl ./bridge/lean-impl.mjs
+      - name: Model versus latest reference engine, 40 cases
+        run: node scripts/compare.mjs
+      - name: Mutation differential against the latest engine
+        run: node scripts/differential.mjs

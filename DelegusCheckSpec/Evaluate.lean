@@ -71,12 +71,17 @@ def p3Of (π : Prims) (g : GrantF) : IssuerLookup → Outcome
 def p4Of (e : Env) (g : GrantF) : Outcome := ok (decide (g.validFromMs ≤ e.clk.nowMs)) .GRANT_NOT_YET_VALID
 def p5Of (e : Env) (g : GrantF) : Outcome := ok (decide (e.clk.nowMs < g.validUntilMs)) .GRANT_EXPIRED
 
-/-- P6: unavailable revocation state is `SERVICE_UNAVAILABLE` (§7); an
-    unusable or revoking credential is `AUTHORITY_REVOKED`. -/
+/-- P6: no credential is `SERVICE_UNAVAILABLE` (§7); a usable credential
+    with the bit set is `AUTHORITY_REVOKED`; an unusable credential gives
+    `unusableStatusCode` (see `Readings.lean`). -/
 def p6Of (e : Env) (g : GrantF) : Outcome :=
   match e.s.status g.statusUrl with
   | .unavailable => .fail .SERVICE_UNAVAILABLE
-  | .snapshot cred => ok (statusOk e.π e.tc e.clk.nowMs cred g.statusUrl g.statusIndex) .AUTHORITY_REVOKED
+  | .snapshot cred =>
+    match statusBit e.π e.tc e.clk.nowMs cred g.statusUrl g.statusIndex with
+    | some false => .pass
+    | some true => .fail .AUTHORITY_REVOKED
+    | none => .fail unusableStatusCode
 
 def p7Of (e : Env) (g : GrantF) : Outcome := ok (audienceOk g e.req.rp) .AUDIENCE_MISMATCH
 def p9Of (e : Env) (p : ProofF) : Outcome := ok (e.π.sigOk p.agentKey p.signingInput p.signature) .PROOF_SIGNATURE_INVALID

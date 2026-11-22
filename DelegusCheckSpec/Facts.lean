@@ -82,13 +82,13 @@ theorem parseProof_sound {π : Prims} {t : String} {p : ProofF} (h : parseProof 
 
 /-! ## P6 -/
 
-theorem statusOk_signed {π : Prims} {tc : TrustConfig} {now : Int} {cred url idx : String}
-    (h : statusOk π tc now cred url idx = true) :
+/-- A usable credential (any bit) was signed by a trusted Delegus
+    status-list key. -/
+theorem statusBit_signed {π : Prims} {tc : TrustConfig} {now : Int} {cred url idx : String} {b : Bool}
+    (h : statusBit π tc now cred url idx = some b) :
     ∃ j kid key, π.decodeJws cred = some j ∧ (kid, key) ∈ tc.statusKeys ∧
       π.sigOk key j.signingInput j.signature = true := by
-  unfold statusOk at h
-  simp only [Option.isSome_iff_exists] at h
-  obtain ⟨_, h⟩ := h
+  unfold statusBit at h
   peel h
   obtain ⟨kv, hf, rfl⟩ := Option.map_eq_some_iff.mp ‹statusKey tc _ = some _›
   exact ⟨_, kv.1, kv.2, ‹_›, List.mem_of_find?_eq_some hf, ‹_›⟩

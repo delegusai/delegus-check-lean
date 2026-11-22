@@ -59,11 +59,15 @@ def optTime (π : Prims) : Option Json → Option (Option Int)
   | none => some none
   | some v => ((str? v).bind π.rfc3339).map some
 
-/-- `true` exactly when the credential shows the Grant not revoked at `now`.
-    The credential's own validity window is read with the same `now` as
-    every other check (one clock, owner-confirmed 22 Nov 2026). -/
-def statusOk (π : Prims) (tc : TrustConfig) (nowMs : Int) (credential url index : String) : Bool :=
-  (do
+/-- The Grant's revocation bit, read from a usable status credential: `some
+    false` (not revoked), `some true` (revoked), or `none` when the
+    credential is unusable (not decodable, not signed by a trusted Delegus
+    status-list key, not for this URL, outside its own validity, malformed,
+    or the index outside the list). The credential's validity window is read
+    with the same `now` as every other check (one clock, owner-confirmed
+    22 Nov 2026). -/
+def statusBit (π : Prims) (tc : TrustConfig) (nowMs : Int) (credential url index : String) : Option Bool :=
+  do
     let j ← π.decodeJws credential
     let h := j.header
     let p := j.payload
@@ -97,9 +101,11 @@ def statusOk (π : Prims) (tc : TrustConfig) (nowMs : Int) (credential url index
     req (decide (vf ≤ nowMs))
     req (match vu with | some u => decide (nowMs < u) | none => true)
     req (isDecimal index)
-    let bit ← bitAt bits (decimalValue index)
-    req (!bit)
-    some ()).isSome
+    bitAt bits (decimalValue index)
+
+/-- The credential is usable and shows the Grant not revoked at `now`. -/
+def statusOk (π : Prims) (tc : TrustConfig) (nowMs : Int) (credential url index : String) : Bool :=
+  statusBit π tc nowMs credential url index == some false
 
 /-! ## P7: audience (§3.2 row 13) -/
 

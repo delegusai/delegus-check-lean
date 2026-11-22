@@ -10,10 +10,12 @@ a precise model in Lean 4, a tool that checks mathematical proofs by
 machine, and proves properties of them that hold for every possible input,
 not only the cases we happened to test.
 
-Two stages are done. Phase 0 proved the order of the checks, the yes-or-no
-answer and the reason given for a no. Phase 1 writes every one of the 24
-checks as a real rule, field by field, and proves what the specification
-promises about the whole decision.
+Three stages are done. Phase 0 proved the order of the checks, the
+yes-or-no answer and the reason given for a no. Phase 1 writes every one of
+the 24 checks as a real rule, field by field, and proves what the
+specification promises about the whole decision. Phase 2 ties the model to
+the real engine: the published conformance runner runs the model as an
+implementation, and thousands of altered cases go through both.
 
 ## What is proven
 
@@ -74,9 +76,10 @@ foundations; the full audit is under [Axiom audit](#axiom-audit).
   replay erratum the owner has chosen (erratum 4), whose text is being
   drafted.
 - **That the real engine equals the model.** The engine is TypeScript. The
-  two are tied together by running the same 40 published test cases through
-  both and failing if they differ in any way. That is strong testing, not a
-  proof that the code equals the model.
+  two are tied together by running the 40 published test cases, and over
+  four thousand altered versions of them, through both and failing if they
+  differ in any way. That is strong testing, not a proof that the code
+  equals the model.
 
 ## The 40 published test cases
 
@@ -97,6 +100,34 @@ result:
 40 of 40 cases match on decision, reason, both layers and all 24 checks; 0 failure(s)
 ```
 
+The published conformance runner, with the model plugged in as the
+implementation under test:
+
+```
+PASS: 40/40 vectors (0 receipts byte-identical), 1 sets passed, 2 skipped, 40/40 committed receipts re-verify offline
+```
+
+(The model signs no receipts, so none are compared. It supplies its own
+`jti` rule, which passes the `jti` set; the `htu` and JCS sets are skipped
+because in the model those are primitives.)
+
+## Altered cases
+
+Forty cases are forty points. The mutation differential changes each case
+in about a hundred small ways (the clock, the Proof window, the relying
+party, every Action field, the service state, the trusted keys, tampered
+bytes, and Proofs re-signed with the cases' published test keys so a
+changed Action or time reaches the later checks) and runs every version
+through both the model and the engine. There is no expected answer; the
+two must simply agree:
+
+```
+4303 of 4303 mutants agree on decision, reason, both layer results, all 24 checks, request_hash and principal; 0 disagreement(s)
+```
+
+The mutants cover every reason code and both answers (108 ALLOW, 4195
+DENY).
+
 ## How to re-run it
 
 You need [elan](https://github.com/leanprover/elan) (the Lean version
@@ -110,10 +141,12 @@ lake test                       # the 40 cases through the model, against each c
 ./scripts/check-axioms.sh       # what every theorem rests on
 npm ci --ignore-scripts         # the reference engine, pinned: @delegus/conformance 0.4.0
 node scripts/compare.mjs        # model and engine, case by case
+npx --no-install delegus-conformance --impl ./bridge/lean-impl.mjs   # the published runner, with the model plugged in
+node scripts/differential.mjs   # model and engine on about 4,300 altered cases
 ```
 
-`lake build` fails if any proof is wrong. `lake test`, `check-axioms.sh` and
-`compare.mjs` each exit non-zero on any mismatch. `compare.mjs` also fails
+`lake build` fails if any proof is wrong. Every other command exits
+non-zero on any mismatch. `compare.mjs` also fails
 if `vectors/lowered/` is not exactly what `node scripts/lower.mjs` produces.
 
 To print the model's answer for each case, one JSON object per line:
@@ -144,7 +177,10 @@ To print the model's answer for each case, one JSON object per line:
 | `DelegusCheckSpec/Phase1.lean`, `Phase1Rows.lean` | Phase 1 theorems |
 | `DelegusCheckVectors/Case.lean` | Running the model on a case (not used by any proof) |
 | `DelegusCheckModel.lean`, `ModelTest.lean` | `delegus-check-model`, and the `lake test` driver |
-| `scripts/lower.mjs` | The lowering: the primitive facts for each case |
+| `scripts/lowering.mjs`, `scripts/lower.mjs` | The lowering: the primitive facts for a case, and the command that writes `vectors/lowered/` |
+| `bridge/lean-impl.mjs` | The model as an `Implementation` for the `@delegus/conformance` runner |
+| `scripts/differential.mjs` | The mutation differential |
+| `.github/workflows/ci.yml` | CI on push and nightly against the latest `@delegus/conformance`; off until the repository variable `CI_ENABLED` is `true` |
 | `scripts/compare.mjs` | Model against the reference engine, live, on all 40 cases |
 | `scripts/check-axioms.sh` | `#print axioms` for every theorem, failing on anything but the standard three |
 | `vectors/cases/` | The 40 cases, byte for byte from `@delegus/conformance` 0.4.0 |
@@ -240,7 +276,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.parseGrant_parent' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.parseGrant_undecodable' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.parseProof_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
-'DelegusCheck.statusOk_signed' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.statusBit_signed' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.staged_get' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.not_pass_of_base' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.base_of_pass' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -389,9 +425,27 @@ expected results except by the test driver, which compares against them.
 `coreImplementation` from `@delegus/conformance` 0.4.0 and compares the
 decision, the reason, both layer results, all 24 outcomes, `request_hash`
 and the attributed Principal. `--engine <module>` points it at another
-module exporting `coreImplementation`. The conformance runner's `--impl`
-adapter and CI on push and nightly come with Phase 2; the lowering was
-built now so that every Phase 1 step is checked against all 40 cases.
+module exporting `coreImplementation`.
+
+`bridge/lean-impl.mjs` implements the runner's `Implementation`: it lowers
+the input it is given, runs the Lean executable and returns the model's
+answer, so `npx delegus-conformance --impl ./bridge/lean-impl.mjs` checks
+the model with the runner's own comparison.
+
+`scripts/differential.mjs` builds the mutants, runs the engine on each and
+the model on all of them in one batch, and compares. A mutant the engine
+rejects as invalid service input (it throws by design, for example a Proof
+window outside 1–300 seconds) is counted and skipped: 40 in the current
+run.
+
+### CI
+
+`.github/workflows/ci.yml` runs on every push (build, `lake test`, the axiom
+audit, `compare.mjs`, the conformance runner with the model, the
+differential) and nightly against the latest published
+`@delegus/conformance` and `@delegus/core`, so an engine release that
+changes behaviour turns it red. It is off while the repository is private:
+every job runs only when the repository variable `CI_ENABLED` is `true`.
 
 ### Source of the cases
 
@@ -420,7 +474,7 @@ points below changes or extends the protocol.
   specification's reading (§5.4, erratum 2), confirmed by the owner on
   22 November 2026.
 
-**Engine readings, pending the owner** (each isolated in
+**Engine readings, owner-confirmed 22 November 2026** (each isolated in
 `DelegusCheckSpec/Readings.lean`):
 
 - **`merchantCategory`** (`knownConstraintKeys`). §3.3 defines it, but the
@@ -428,9 +482,27 @@ points below changes or extends the protocol.
   with `UNKNOWN_CONSTRAINT`. Hence `authorization_sound` is stated in the
   safe direction only.
 - **Which P1 code wins** (`p1Code`). For a Grant that both carries
-  `parentGrant` and is malformed, the specification does not say. The
-  engine reports a malformed header first, then `parentGrant`, then the
-  payload rules.
+  `parentGrant` and is malformed, the specification does not say. A
+  malformed header is reported first, then `parentGrant`, then the payload
+  rules.
+- **`jti` format** (`isJti`). §4.2 says "MUST be 22–64 ASCII characters";
+  the engine, and so the model, accepts only the base64url alphabet, the
+  SHOULD encoding. This is narrower than the text.
+
+**Owner ruling waiting for erratum 5** (`unusableStatusCode`):
+
+- **An unusable status credential** (bad signature, wrong URL, outside its
+  own validity, index outside the list). The frozen text and the published
+  engine give `AUTHORITY_REVOKED` at P6. The owner ruled that such a
+  credential means current revocation state "cannot be established" (§7),
+  so the answer is `SERVICE_UNAVAILABLE`. That changes engine behaviour and
+  goes in as erratum 5 with new vectors; until they land the switch stays at
+  the frozen behaviour, so the model matches the published cases. Every
+  proof holds with either setting. With it flipped, 121 of the 4,303
+  mutants change their reason from `AUTHORITY_REVOKED` to
+  `SERVICE_UNAVAILABLE`, all of them unusable-credential cases (tampered,
+  garbage or untrusted-key credentials, and a clock moved to before the
+  credential is valid); none of the 40 published cases does.
 
 **Engine readings the specification leaves open**:
 
@@ -443,19 +515,10 @@ points below changes or extends the protocol.
 4. `SERVICE_UNAVAILABLE` sits at P6 when revocation state cannot be read
    (§7 names the code, not the check) and at T1 when the issuer registry
    cannot be read (the specification names no code).
-5. A status credential that is present but unusable (bad signature, wrong
-   URL, not yet valid or expired, index outside the list) gives
-   `AUTHORITY_REVOKED` at P6, not `SERVICE_UNAVAILABLE`. §5.2 gives P6 only
-   `AUTHORITY_REVOKED`; §7 gives `SERVICE_UNAVAILABLE` when current
-   revocation state "cannot be established". Which of the two an unusable
-   credential is, the specification does not say.
-6. `jti` (§4.2) "MUST be 22–64 ASCII characters"; the engine, and so the
-   model, accepts only the base64url alphabet, the SHOULD encoding. This is
-   narrower than the text.
-7. The replay operation (T5) runs once P1–P14 pass, so a request denied at
+5. The replay operation (T5) runs once P1–P14 pass, so a request denied at
    T2 or T3 still consumes its `jti` (plan §1.7 item 6). Its key expiry is
    the frozen `PX 2 × window_ms`, isolated in `replayQuery` for erratum 4.
-8. Integers follow ECMAScript: a JSON number such as `1.0` counts as the
+6. Integers follow ECMAScript: a JSON number such as `1.0` counts as the
    integer 1. `did:web` syntax is the engine's: lowercase host, optional
    `%3A` port, optional path segments. The default Proof window is 60
    seconds.

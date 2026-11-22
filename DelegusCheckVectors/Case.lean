@@ -120,8 +120,8 @@ def isStrJ (j : Json) (s : String) : Bool :=
 def loadCase (caseText loweredText : String) : Except String Loaded := do
   let c ← Json.parse caseText
   let l ← Json.parse loweredText
-  let id ← getStr c "vector"
-  if (← getStr l "vector") != id then throw s!"{id}: lowered file is for another case"
+  let id := (getStr c "vector").toOption.getD "case"
+  if (getStr l "vector").toOption.getD "case" != id then throw s!"{id}: lowered file is for another case"
   let input ← c.getObjVal? "input"
   let action ← input.getObjVal? "action"
   let facts ← parseFacts l action
@@ -163,7 +163,8 @@ def loadCase (caseText loweredText : String) : Except String Loaded := do
     if replayDown then .unavailable
     else if q.rp == rp && consumed.contains q.jti then .replayed
     else .ok
-  return { id, env := ⟨π, req, ⟨issuer, status⟩, tc, ⟨nowMs⟩, ρ⟩, expected := ← c.getObjVal? "expected" }
+  return { id, env := ⟨π, req, ⟨issuer, status⟩, tc, ⟨nowMs⟩, ρ⟩,
+           expected := (c.getObjVal? "expected").toOption.getD .null }
 
 /-! ## Output -/
 

@@ -6,7 +6,7 @@
 //
 // 1. Checks that vectors/cases/ is byte-identical to the cases shipped in the
 //    pinned @delegus/conformance package.
-// 2. Runs the Lean executable (.lake/build/bin/delegus-model) on vectors/cases/.
+// 2. Runs the Lean executable (.lake/build/bin/delegus-check-model) on vectors/cases/.
 // 3. Runs the reference engine (@delegus/core, through the package's
 //    `coreImplementation`) live on each case's input.
 // 4. Compares decision, reason, both layer results and all 24 check outcomes.
@@ -50,7 +50,7 @@ for (const n of names) {
 }
 
 // 2. The Lean model.
-const exe = join(root, ".lake", "build", "bin", "delegus-model");
+const exe = join(root, ".lake", "build", "bin", "delegus-check-model");
 const lean = new Map();
 for (const line of execFileSync(exe, [casesDir], { encoding: "utf8" }).split("\n")) {
   if (line.trim() === "") continue;

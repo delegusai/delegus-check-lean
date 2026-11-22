@@ -23,9 +23,9 @@ So the decision, the reason and both layer results are computed by the
 kernel, independently of the engine's reported decision and reason.
 -/
 import Lean.Data.Json
-import DelegusSpec
+import DelegusCheckSpec
 
-namespace Delegus.Vectors
+namespace DelegusCheck.Vectors
 
 open Lean (Json)
 
@@ -170,7 +170,7 @@ def parseCase (text : String) : Except String Case := do
 
 /-! ## Rendering the kernel's result -/
 
-def _root_.Delegus.Decision.name : Decision → String
+def _root_.DelegusCheck.Decision.name : Decision → String
   | .allow => "ALLOW"
   | .deny => "DENY"
 
@@ -202,4 +202,4 @@ def caseFiles (dir : System.FilePath) : IO (Array System.FilePath) := do
   let files := entries.filter (·.fileName.endsWith ".json") |>.map (·.path)
   return files.qsort (fun a b => a.toString < b.toString)
 
-end Delegus.Vectors
+end DelegusCheck.Vectors

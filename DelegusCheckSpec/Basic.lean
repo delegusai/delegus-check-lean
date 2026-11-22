@@ -2,12 +2,12 @@
 Copyright 2026 Inam Haq. Licensed under the Apache License, Version 2.0.
 
 The check names, reason codes and evaluation order below restate the check
-tables of §5.2, §5.3 and §5.4 of the Delegus Specification v0.2.
+tables of §5.2, §5.3 and §5.4 of the Delegus Check v0.2 specification.
 Attribution: "Delegus Specification v0.2, © Delegus (delegus.ai)", licensed
 under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
 -/
 
-namespace Delegus
+namespace DelegusCheck
 
 /-- The 24 checks of `delegus-base-v1` (P1–P20, §5.2) and `delegus-trust-v1`
     (T1, T2, T3, T5, §5.3). T4 and T6 do not exist (§5.3). Constructors are
@@ -163,4 +163,4 @@ inductive Decision
   | deny
   deriving DecidableEq, Repr, Inhabited
 
-end Delegus
+end DelegusCheck

@@ -1,21 +1,21 @@
-name = "DelegusSpec"
+name = "DelegusCheckSpec"
 version = "0.1.0"
 license = "Apache-2.0"
-description = "A Lean 4 model of the Delegus v0.2 /verify decision rules, with machine-checked proofs"
-defaultTargets = ["DelegusSpec", "delegus-model"]
+description = "A Lean 4 model of the Delegus Check v0.2 /verify decision rules, with machine-checked proofs"
+defaultTargets = ["DelegusCheckSpec", "delegus-check-model"]
 testDriver = "kernel_test"
 
 # The model and its proofs. Pure: no IO, no JSON.
 [[lean_lib]]
-name = "DelegusSpec"
+name = "DelegusCheckSpec"
 
 # Reading conformance cases (Phase 0 lowering). Not used by any proof.
 [[lean_lib]]
-name = "DelegusVectors"
+name = "DelegusCheckVectors"
 
 [[lean_exe]]
-name = "delegus-model"
-root = "DelegusModel"
+name = "delegus-check-model"
+root = "DelegusCheckModel"
 
 [[lean_exe]]
 name = "kernel_test"

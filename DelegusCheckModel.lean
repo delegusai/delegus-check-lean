@@ -1,13 +1,13 @@
 /-
 Copyright 2026 Inam Haq. Licensed under the Apache License, Version 2.0.
 
-`delegus-model [path ...]`: runs each conformance case through the Phase 0
+`delegus-check-model [path ...]`: runs each conformance case through the Phase 0
 kernel and prints one JSON object per case (JSON Lines). A path may be a
 case file or a directory of them; the default is `vectors/cases`.
 -/
-import DelegusVectors
+import DelegusCheckVectors
 
-open Delegus Delegus.Vectors
+open DelegusCheck DelegusCheck.Vectors
 
 def collect (paths : List String) : IO (Array System.FilePath) := do
   let mut out := #[]

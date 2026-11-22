@@ -6,9 +6,9 @@ fails on any difference from the case's expected decision, reason and layer
 results, or if a case does not follow the engine's prerequisite table or
 carries a code its check cannot carry.
 -/
-import DelegusVectors
+import DelegusCheckVectors
 
-open Delegus Delegus.Vectors
+open DelegusCheck DelegusCheck.Vectors
 
 def expectedCount : Nat := 40
 

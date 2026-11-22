@@ -1,4 +1,4 @@
-name: ci
+name: Delegus Check Lean CI
 
 on:
   push:

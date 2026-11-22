@@ -5,9 +5,9 @@ Phase 0 kernel: from the 24 check outcomes to the decision, the reason and
 the two layer results (§5.4). Attribution for restated spec text:
 "Delegus Specification v0.2, © Delegus (delegus.ai)", CC BY 4.0.
 -/
-import DelegusSpec.Basic
+import DelegusCheckSpec.Basic
 
-namespace Delegus
+namespace DelegusCheck
 
 /-- The reason: the first `false` in §5.4 order. -/
 def firstFail (c : Checks) : Option Reason :=
@@ -114,4 +114,4 @@ def wellCodedB (c : Checks) : Bool :=
     | .fail r => (codes k).contains r
     | _ => true
 
-end Delegus
+end DelegusCheck

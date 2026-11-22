@@ -1,13 +1,13 @@
-delegus-lean
+delegus-check-lean: Delegus Check decision rules in Lean 4
 Copyright 2026 Inam Haq
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
-vectors/cases/ holds the 40 conformance cases of @delegus/conformance 0.4.0
-(npm), byte for byte. They are licensed under the Apache License, Version 2.0,
-by Delegus.
+vectors/cases/ holds the 40 Delegus Check conformance cases of
+@delegus/conformance 0.4.0 (npm), byte for byte. They are licensed under the
+Apache License, Version 2.0, by Delegus.
 
 Lean doc comments that restate the check tables and evaluation order of the
-Delegus Specification v0.2 carry its attribution: "Delegus Specification
-v0.2, © Delegus (delegus.ai)", licensed under CC BY 4.0
-(https://creativecommons.org/licenses/by/4.0/).
+Delegus Check v0.2 specification carry the attribution that specification
+asks for: "Delegus Specification v0.2, © Delegus (delegus.ai)", licensed
+under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).

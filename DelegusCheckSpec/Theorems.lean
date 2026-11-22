@@ -3,9 +3,9 @@ Copyright 2026 Inam Haq. Licensed under the Apache License, Version 2.0.
 
 Phase 0 theorems. scripts/check-axioms.sh audits what each one rests on.
 -/
-import DelegusSpec.Kernel
+import DelegusCheckSpec.Kernel
 
-namespace Delegus
+namespace DelegusCheck
 
 /-! ## The order (§5.4) -/
 
@@ -239,4 +239,4 @@ theorem wellCodedB_sound (c : Checks) (h : wellCodedB c = true) : WellCoded c :=
   simp only [hk, List.contains_iff_mem] at this
   simpa using this
 
-end Delegus
+end DelegusCheck

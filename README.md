@@ -1,11 +1,11 @@
-# Delegus decision rules in Lean 4
+# Delegus Check decision rules in Lean 4
 
 By Inam Haq
 
-Delegus answers one question for a business: is this AI agent really allowed
-to do this, right now, for this company? The answer comes from a fixed list
-of 24 checks, run in a fixed order, written down in the Delegus v0.2
-specification. This repository writes those rules as a precise model in
+Delegus Check by Delegus answers one question for a business: is this AI
+agent really allowed to do this, right now, for this company? The answer
+comes from a fixed list of 24 checks, run in a fixed order, written down in
+the Delegus Check v0.2 specification. This repository writes those rules as a precise model in
 Lean 4, a tool that checks mathematical proofs by machine, and proves
 properties of them that hold for every possible input, not only the cases
 we happened to test.
@@ -88,6 +88,8 @@ You need [elan](https://github.com/leanprover/elan) (the Lean version
 manager) and, for the engine comparison, Node.js 22 or later.
 
 ```sh
+git clone https://github.com/delegusai/delegus-check-lean.git
+cd delegus-check-lean
 lake build                      # the model, the proofs and the case runner
 lake test                       # the 40 cases through the model, against each case's expected result
 ./scripts/check-axioms.sh       # what every theorem rests on
@@ -102,7 +104,7 @@ on every push (`.github/workflows/ci.yml`).
 To print the model's answer for each case, one JSON object per line:
 
 ```sh
-.lake/build/bin/delegus-model vectors/cases
+.lake/build/bin/delegus-check-model vectors/cases
 ```
 
 ---
@@ -113,11 +115,11 @@ To print the model's answer for each case, one JSON object per line:
 
 | Path | Contents |
 |---|---|
-| `DelegusSpec/Basic.lean` | `Check` (24 constructors), `order` (§5.4), `protocolChecks`, `trustChecks`, `Reason` (21 §5.2 codes, 5 §5.3 codes, reserved `ISSUER_NOT_TRUSTED`), `codes` (which codes each check may carry), `Outcome` (`pass`, `fail r`, `skipped`), `Checks`, `Decision` |
-| `DelegusSpec/Kernel.lean` | `firstFail`, `firstFailCheck`, `allPass`, `decisionOf`, `Result`, `kernel` (the pure Phase 0 evaluator), `Prereq`, `enginePrereq`, `Backward`, `Respects`, `WellCoded`, and executable versions `backwardB`, `exactB`, `wellCodedB` |
-| `DelegusSpec/Theorems.lean` | The theorems below |
-| `DelegusVectors/Lower.lean` | Reading a conformance case into the kernel's input (not used by any proof) |
-| `DelegusModel.lean` | `delegus-model`: prints the kernel's result per case |
+| `DelegusCheckSpec/Basic.lean` | `Check` (24 constructors), `order` (§5.4), `protocolChecks`, `trustChecks`, `Reason` (21 §5.2 codes, 5 §5.3 codes, reserved `ISSUER_NOT_TRUSTED`), `codes` (which codes each check may carry), `Outcome` (`pass`, `fail r`, `skipped`), `Checks`, `Decision` |
+| `DelegusCheckSpec/Kernel.lean` | `firstFail`, `firstFailCheck`, `allPass`, `decisionOf`, `Result`, `kernel` (the pure Phase 0 evaluator), `Prereq`, `enginePrereq`, `Backward`, `Respects`, `WellCoded`, and executable versions `backwardB`, `exactB`, `wellCodedB` |
+| `DelegusCheckSpec/Theorems.lean` | The theorems below |
+| `DelegusCheckVectors/Lower.lean` | Reading a conformance case into the kernel's input (not used by any proof) |
+| `DelegusCheckModel.lean` | `delegus-check-model`: prints the kernel's result per case |
 | `KernelTest.lean` | `lake test` driver: the 40 cases against their expected decision, reason and layer results |
 | `scripts/check-axioms.sh` | `#print axioms` for every theorem, failing on anything but the standard three |
 | `scripts/compare.mjs` | Model against the reference engine, live, on all 40 cases |
@@ -156,7 +158,7 @@ inputs and parameters is Phase 1.
 
 ### Theorems
 
-All in namespace `Delegus`. `c : Checks` is arbitrary; `pr : Prereq` is any
+All in namespace `DelegusCheck`. `c : Checks` is arbitrary; `pr : Prereq` is any
 prerequisite table.
 
 | Theorem | Statement |
@@ -193,36 +195,36 @@ by `exactB_sound` and `wellCodedB_sound` the hypotheses of
 Output of `./scripts/check-axioms.sh` with Lean 4.36.0:
 
 ```
-'Delegus.order_is_spec' does not depend on any axioms
-'Delegus.order_length' does not depend on any axioms
-'Delegus.order_nodup' does not depend on any axioms
-'Delegus.order_complete' depends on axioms: [propext]
-'Delegus.p6_before_t5' does not depend on any axioms
-'Delegus.p14_before_t5' does not depend on any axioms
-'Delegus.p1_to_p14_before_t5' does not depend on any axioms
-'Delegus.layers_partition' depends on axioms: [propext]
-'Delegus.Outcome.isPass_iff' depends on axioms: [propext]
-'Delegus.Outcome.failReason_eq_none_iff' depends on axioms: [propext]
-'Delegus.Outcome.failReason_eq_some_iff' depends on axioms: [propext]
-'Delegus.allPass_iff' depends on axioms: [propext, Quot.sound]
-'Delegus.allow_iff_all_pass' depends on axioms: [propext, Quot.sound]
-'Delegus.allow_iff_every_check' depends on axioms: [propext, Quot.sound]
-'Delegus.deny_of_not_pass' depends on axioms: [propext, Quot.sound]
-'Delegus.deny_of_fail' depends on axioms: [propext, Quot.sound]
-'Delegus.protocolPass_iff' depends on axioms: [propext, Quot.sound]
-'Delegus.trustPass_iff' depends on axioms: [propext, Quot.sound]
-'Delegus.allow_iff_layers' depends on axioms: [propext, Quot.sound]
-'Delegus.reason_first_fail' depends on axioms: [propext, Quot.sound]
-'Delegus.reason_first_fail_idx' depends on axioms: [propext, Quot.sound]
-'Delegus.reason_eq_firstFailCheck' depends on axioms: [propext]
-'Delegus.skipped_has_earlier_fail' depends on axioms: [propext, Classical.choice, Quot.sound]
-'Delegus.reason_none_iff_allow' depends on axioms: [propext, Classical.choice, Quot.sound]
-'Delegus.reason_mem_codes' depends on axioms: [propext, Quot.sound]
-'Delegus.reason_never_reserved' depends on axioms: [propext, Quot.sound]
-'Delegus.backwardB_sound' depends on axioms: [propext, Quot.sound]
-'Delegus.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
-'Delegus.exactB_sound' depends on axioms: [propext, Quot.sound]
-'Delegus.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.order_is_spec' does not depend on any axioms
+'DelegusCheck.order_length' does not depend on any axioms
+'DelegusCheck.order_nodup' does not depend on any axioms
+'DelegusCheck.order_complete' depends on axioms: [propext]
+'DelegusCheck.p6_before_t5' does not depend on any axioms
+'DelegusCheck.p14_before_t5' does not depend on any axioms
+'DelegusCheck.p1_to_p14_before_t5' does not depend on any axioms
+'DelegusCheck.layers_partition' depends on axioms: [propext]
+'DelegusCheck.Outcome.isPass_iff' depends on axioms: [propext]
+'DelegusCheck.Outcome.failReason_eq_none_iff' depends on axioms: [propext]
+'DelegusCheck.Outcome.failReason_eq_some_iff' depends on axioms: [propext]
+'DelegusCheck.allPass_iff' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.allow_iff_all_pass' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.allow_iff_every_check' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.deny_of_not_pass' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.deny_of_fail' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.protocolPass_iff' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.trustPass_iff' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.allow_iff_layers' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.reason_first_fail' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.reason_first_fail_idx' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.reason_eq_firstFailCheck' depends on axioms: [propext]
+'DelegusCheck.skipped_has_earlier_fail' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.reason_none_iff_allow' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.reason_mem_codes' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.reason_never_reserved' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.backwardB_sound' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
 OK: 30 theorems, standard axioms only
 ```
 
@@ -231,7 +233,7 @@ axioms. `sorryAx` appears nowhere.
 
 ### How a case is read
 
-`DelegusVectors/Lower.lean` turns one case file into the kernel's input.
+`DelegusCheckVectors/Lower.lean` turns one case file into the kernel's input.
 
 - The 24 outcomes come from the case's `expected.protocol_checks` and
   `expected.trust_checks` (`true` → `pass`, `false` → `fail`, `"skipped"`
@@ -267,14 +269,14 @@ the checks itself.
 version 0.4.0 (npm integrity
 `sha512-jZQUL1oRaD4WQXWpNCTFYVQgcsPHT9SYMyImiUyliUN8J41XgrsEemIGzMbuz7GLiXSRjtdG7R3+BFl8gKkH9A==`),
 byte for byte; `scripts/compare.mjs` fails if they ever differ. They are the
-same bytes as `packages/core/test/vectors/cases/` in the Delegus reference
+same bytes as `packages/core/test/vectors/cases/` in the Delegus Check reference
 engine. They use test keys and non-production identifiers only
 (`did:web:acme.example`, `did:web:test.delegus.example`).
 
 ### Readings
 
-The specification is the only normative source: Delegus Specification v0.2,
-frozen, with errata 1 and 2. Where it is silent, the model takes the
+The only normative source is the Delegus Check v0.2 specification
+(`delegus-spec-v0.2-final.md`), frozen, with errata 1 and 2. Where it is silent, the model takes the
 readings below. None changes or extends the protocol.
 
 1. **Which check depends on which.** §5.4 says checks "whose prerequisites
@@ -316,5 +318,5 @@ model. They are not touched here.
 
 Apache-2.0 (`LICENSE`, `NOTICE`). The cases in `vectors/cases/` are
 Apache-2.0 from Delegus. Doc comments that restate the specification's
-check tables carry its attribution: "Delegus Specification v0.2, © Delegus
+check tables carry the attribution it asks for: "Delegus Specification v0.2, © Delegus
 (delegus.ai)", CC BY 4.0.

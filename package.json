@@ -1,7 +1,7 @@
 {
-  "name": "delegus-lean-bridge",
+  "name": "delegus-check-lean-bridge",
   "private": true,
-  "description": "Compares the Lean model's output with the reference engine on the conformance cases.",
+  "description": "Compares the Lean model of Delegus Check with the Delegus Check reference engine on the conformance cases.",
   "type": "module",
   "license": "Apache-2.0",
   "engines": { "node": ">=22" },

@@ -10,12 +10,13 @@ a precise model in Lean 4, a tool that checks mathematical proofs by
 machine, and proves properties of them that hold for every possible input,
 not only the cases we happened to test.
 
-Three stages are done. Phase 0 proved the order of the checks, the
+Four stages are done. Phase 0 proved the order of the checks, the
 yes-or-no answer and the reason given for a no. Phase 1 writes every one of
 the 24 checks as a real rule, field by field, and proves what the
 specification promises about the whole decision. Phase 2 ties the model to
 the real engine: the published conformance runner runs the model as an
-implementation, and thousands of altered cases go through both.
+implementation, and thousands of altered cases go through both. Phase 3
+proves that an old decision re-checks the same, years later.
 
 ## What is proven
 
@@ -49,7 +50,13 @@ state of the service, and every possible answer from the cryptography:
    every number in the Action is a whole number; the Proof's `jti` has the
    required format; and the receipt never names a Principal or Agent unless
    the Grant's signature checked out.
-8. **The protections the specification lists (§13.1) hold in the model.**
+8. **An old decision re-checks the same.** Anyone holding a receipt and the
+   documents it names by fingerprint can re-run the open part of the
+   decision at the time recorded in the receipt and get the same 20 protocol
+   checks, whatever their own clock says (erratum 2). With today's clock
+   instead, every yes would turn into "expired" once the Grant ran out;
+   that is proven too.
+9. **The protections the specification lists (§13.1) hold in the model.**
    A Proof sent to a different service, an expired or not-yet-valid Grant, a
    cancelled Grant, a compromised key, an unknown or unverified issuer, a
    status list not signed by Delegus, and a service the Grant excludes are
@@ -175,6 +182,8 @@ To print the model's answer for each case, one JSON object per line:
 | `DelegusCheckSpec/Staged.lean` | `staged_eq_table` |
 | `DelegusCheckSpec/Facts.lean` | What a passing parser guarantees |
 | `DelegusCheckSpec/Phase1.lean`, `Phase1Rows.lean` | Phase 1 theorems |
+| `DelegusCheckSpec/Historical.lean` | Phase 3: `Receipt`, `receiptOf`, `Artifacts`, `reverify`, and the historical-clock theorems |
+| `scripts/readme-axioms.py` | Refreshes the axiom audit below from `check-axioms.sh` |
 | `DelegusCheckVectors/Case.lean` | Running the model on a case (not used by any proof) |
 | `DelegusCheckModel.lean`, `ModelTest.lean` | `delegus-check-model`, and the `lake test` driver |
 | `scripts/lowering.mjs`, `scripts/lower.mjs` | The lowering: the primitive facts for a case, and the command that writes `vectors/lowered/` |
@@ -241,6 +250,7 @@ All in namespace `DelegusCheck`. Main Phase 1 statements (`r` is
 | `unknown_constraint_denies` | a candidate Capability with a key outside `knownConstraintKeys` → deny |
 | `unknown_action_field_denies` | Action members not exactly its type's fields → deny |
 | `deterministic` | `rfl`; the content is the signature of `evaluate` |
+| `protocol_local` | the 20 protocol checks depend on the service state only through the registration answer and DID document for the Grant's Principal and, once P3 passed, the status snapshot for its URL |
 | `protocol_reproducible` | same request, clock, status snapshot, trust configuration and per-Principal registration and DID document → the same 20 protocol checks, for any T2, T3 and replay answers |
 | `no_unauthenticated_attribution` | P3 not `true` → `r.attribution = none` (§6.4) |
 | `request_hash_eq_action_hash` | P14 `true` → `r.requestHash = some p.actionHash` (§6.3) |
@@ -251,6 +261,16 @@ All in namespace `DelegusCheck`. Main Phase 1 statements (`r` is
 | `isJti_iff`, `p8_jti` | the `jti` format, and P8 `true` → the Proof's `jti` has it |
 | `tm05_…` to `tm13_…` | the §13.1 rows TM-05, TM-07, TM-08, TM-09, TM-11, TM-12, TM-13 as DENY statements |
 | `tm01_grant_signed`, `tm03_proof_signed_by_agent`, `tm06_action_bound` | TM-01/02, TM-03 and TM-06 under the explicit hypotheses that a verifying signature under a safe key means its holder signed, and that SHA-256 is injective and JCS canonical |
+
+Phase 3 statements (offline re-verification, §6.4 and erratum 2):
+
+| Theorem | Statement |
+|---|---|
+| `reverify_ignores_wall` | `reverify π rc art w₁ = reverify π rc art w₂`: the verifier's clock is not used |
+| `reverify_clock` | re-verification evaluates at the receipt's `evaluated_at` |
+| `reverify_reproduces` | for the receipt of any evaluation, artifacts matching its pinned hashes, the same Action, the RP's Proof window and the status-list keys: the 20 protocol checks are reproduced exactly; hypothesis: SHA-256 injective |
+| `wall_clock_breaks` | an ALLOW at time `t`, re-run at any `w ≥ validUntil`, gives `GRANT_EXPIRED` |
+| `evaluated_at_bound` | under explicit signature, signing-policy and encoding hypotheses, a receipt that verifies is one Delegus issued, with its `evaluated_at` |
 
 Phase 0 statements (the kernel, for any outcomes):
 
@@ -277,6 +297,12 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.parseGrant_undecodable' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.parseProof_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.statusBit_signed' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.reverify_ignores_wall' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.reverify_clock' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.t1_of_grant' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.reverify_reproduces' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.wall_clock_breaks' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.evaluated_at_bound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.staged_get' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.not_pass_of_base' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.base_of_pass' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -306,6 +332,8 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.t1Of_view' depends on axioms: [propext]
 'DelegusCheck.p2Of_view' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.p3Of_view' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.gate_congr' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.protocol_local' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.protocol_reproducible' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.pass_prereq' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.grant_of_p3' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -398,7 +426,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
-OK: 129 theorems, standard axioms only
+OK: 137 theorems, standard axioms only
 ```
 
 `propext`, `Quot.sound` and `Classical.choice` are Lean's three standard
@@ -503,6 +531,17 @@ points below changes or extends the protocol.
   `SERVICE_UNAVAILABLE`, all of them unusable-credential cases (tampered,
   garbage or untrusted-key credentials, and a clock moved to before the
   credential is valid); none of the 40 published cases does.
+
+**Found while proving the historical clock (Phase 3).** Offline
+re-verification (§6.4) is described as needing the receipt, the Delegus
+receipt key and the artifacts named by hash. P13 also needs the RP's Proof
+window, which the receipt does not record (§6.2) and which the RP can
+configure (§4.2). `reverify_reproduces` therefore takes the window as an
+input, as the engine's `reverifyReceipt` does (`proofWindowSeconds`,
+default 60). A receipt for an RP with a non-default window cannot be fully
+re-verified from the receipt and its artifacts alone. This is a gap in the
+text, not a change; recording the window in the receipt would be a v0.3 or
+erratum question for the owner.
 
 **Engine readings the specification leaves open**:
 

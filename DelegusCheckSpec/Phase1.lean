@@ -223,6 +223,87 @@ theorem p3Of_view {π : Prims} {g : GrantF} {x y : IssuerLookup} (h : x.view = y
     p3Of π g x = p3Of π g y := by
   cases x <;> cases y <;> simp_all [IssuerLookup.view, p3Of]
 
+theorem gate_congr {xs : List Outcome} {o₁ o₂ : Outcome} (h : (∀ x ∈ xs, x = .pass) → o₁ = o₂) :
+    gate xs o₁ = gate xs o₂ := by
+  unfold gate
+  split
+  · rename_i hall
+    apply h
+    intro x hx
+    simpa using List.all_eq_true.mp hall x hx
+  · rfl
+
+/-- **The protocol layer depends only on what it reads** (§0 constraint 2,
+    §5.2). Two evaluations of the same request with the same clock and trust
+    configuration give the same 20 protocol checks when, for the Grant as
+    parsed, the issuer registry gives the same registration answer and DID
+    document for its Principal, and, once P3 has passed, the status-list
+    snapshot for its URL is the same. Domain verification, compromised keys
+    (T2, T3), the replay store (T5) and every other Principal or URL may
+    differ freely. -/
+theorem protocol_local {π : Prims} {req : Request} {clk : Clock} {tc : TrustConfig}
+    {s₁ s₂ : Snapshots} {ρ₁ ρ₂ : ReplayQuery → ReplayAnswer}
+    (hi : ∀ g, parseGrant π req.grant = .ok g → (s₁.issuer g.issuer).view = (s₂.issuer g.issuer).view)
+    (hs : ∀ g, parseGrant π req.grant = .ok g →
+      (staged (envOf π req s₁ tc clk ρ₁)).get .P3 = .pass → s₁.status g.statusUrl = s₂.status g.statusUrl) :
+    ∀ k ∈ protocolChecks,
+      (evaluate π req s₁ tc clk ρ₁).result.checks.get k = (evaluate π req s₂ tc clk ρ₂).result.checks.get k := by
+  have hb : ∀ k, k ≠ .T2 → k ≠ .T3 → k ≠ .T5 → k ≠ .P6 →
+      base (envOf π req s₁ tc clk ρ₁) k = base (envOf π req s₂ tc clk ρ₂) k := by
+    intro k h2 h3 h5 h6
+    cases k <;> simp_all [base, Env.grant, Env.proof, Env.action, Env.requestHash, p4Of, p5Of,
+      p7Of, p9Of, p12Of, p13Of, p14Of]
+    all_goals split
+    all_goals first
+      | exact t1Of_view (hi _ ‹_›) | exact p2Of_view (hi _ ‹_›) | exact p3Of_view (hi _ ‹_›) | rfl
+  have h6 : (staged (envOf π req s₁ tc clk ρ₁)).get .P3 = .pass →
+      base (envOf π req s₁ tc clk ρ₁) .P6 = base (envOf π req s₂ tc clk ρ₂) .P6 := by
+    intro h3
+    simp only [base, Env.grant]
+    split
+    · rename_i g hg
+      simp only [p6Of, hs g hg h3]
+    · rfl
+  have bP1 := hb .P1 (by decide) (by decide) (by decide) (by decide)
+  have bT1 := hb .T1 (by decide) (by decide) (by decide) (by decide)
+  have bP2 := hb .P2 (by decide) (by decide) (by decide) (by decide)
+  have bP3 := hb .P3 (by decide) (by decide) (by decide) (by decide)
+  have bP4 := hb .P4 (by decide) (by decide) (by decide) (by decide)
+  have bP5 := hb .P5 (by decide) (by decide) (by decide) (by decide)
+  have bP7 := hb .P7 (by decide) (by decide) (by decide) (by decide)
+  have bP8 := hb .P8 (by decide) (by decide) (by decide) (by decide)
+  have bP9 := hb .P9 (by decide) (by decide) (by decide) (by decide)
+  have bP10 := hb .P10 (by decide) (by decide) (by decide) (by decide)
+  have bP11 := hb .P11 (by decide) (by decide) (by decide) (by decide)
+  have bP12 := hb .P12 (by decide) (by decide) (by decide) (by decide)
+  have bP13 := hb .P13 (by decide) (by decide) (by decide) (by decide)
+  have bP14 := hb .P14 (by decide) (by decide) (by decide) (by decide)
+  have bP15 := hb .P15 (by decide) (by decide) (by decide) (by decide)
+  have bP16 := hb .P16 (by decide) (by decide) (by decide) (by decide)
+  have bP17 := hb .P17 (by decide) (by decide) (by decide) (by decide)
+  have bP18 := hb .P18 (by decide) (by decide) (by decide) (by decide)
+  have bP19 := hb .P19 (by decide) (by decide) (by decide) (by decide)
+  have bP20 := hb .P20 (by decide) (by decide) (by decide) (by decide)
+  have hX : (staged (envOf π req s₁ tc clk ρ₁)).get .P3 =
+      (table (base (envOf π req s₂ tc clk ρ₂))).get .P3 := by
+    rw [staged_eq_table]
+    simp only [table, tableRow, Row.toChecks, Row.get, bP1, bT1, bP2, bP3]
+  intro k hk
+  simp only [evaluate_result, kernel]
+  rw [staged_eq_table, staged_eq_table]
+  simp only [protocolChecks, List.mem_cons, List.not_mem_nil, or_false] at hk
+  rcases hk with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl
+  case inr.inr.inr.inr.inr.inl =>
+    simp only [table, Row.toChecks] at hX ⊢
+    simp only [tableRow, Row.get, bP1, bT1, bP2, bP3, bP4, bP5, bP7, bP8, bP9, bP10, bP11, bP12, bP13, bP14, bP15, bP16, bP17, bP18, bP19, bP20] at hX ⊢
+    apply gate_congr
+    intro hall
+    apply h6
+    rw [hX]
+    exact hall _ (List.mem_singleton_self _)
+  all_goals simp only [table, tableRow, Row.toChecks, Row.get, bP1, bT1, bP2, bP3, bP4, bP5, bP7, bP8, bP9, bP10, bP11, bP12, bP13, bP14, bP15, bP16, bP17, bP18, bP19, bP20]
+
 /-- **The protocol layer is reproducible** (§0 constraint 2, §5.2): with the
     same request (Grant, Proof, Action, RP DID, window), clock, status-list
     snapshot, trust configuration (Delegus DID and status-list keys), and the
@@ -233,43 +314,7 @@ theorem protocol_reproducible {π : Prims} {req : Request} {clk : Clock} {tc : T
     {s₁ s₂ : Snapshots} {ρ₁ ρ₂ : ReplayQuery → ReplayAnswer}
     (hi : ∀ d, (s₁.issuer d).view = (s₂.issuer d).view) (hs : s₁.status = s₂.status) :
     ∀ k ∈ protocolChecks,
-      (evaluate π req s₁ tc clk ρ₁).result.checks.get k = (evaluate π req s₂ tc clk ρ₂).result.checks.get k := by
-  have hb : ∀ k, k ≠ .T2 → k ≠ .T3 → k ≠ .T5 →
-      base (envOf π req s₁ tc clk ρ₁) k = base (envOf π req s₂ tc clk ρ₂) k := by
-    intro k h2 h3 h5
-    cases k <;> simp_all [base, Env.grant, Env.proof, Env.action, Env.requestHash, p4Of, p5Of, p6Of,
-      p7Of, p9Of, p12Of, p13Of, p14Of]
-    all_goals split
-    all_goals first
-      | exact t1Of_view (hi _) | exact p2Of_view (hi _) | exact p3Of_view (hi _) | rfl
-  intro k hk
-  simp only [evaluate_result, kernel]
-  rw [staged_eq_table, staged_eq_table]
-  have bP1 := hb .P1 (by decide) (by decide) (by decide)
-  have bT1 := hb .T1 (by decide) (by decide) (by decide)
-  have bP2 := hb .P2 (by decide) (by decide) (by decide)
-  have bP3 := hb .P3 (by decide) (by decide) (by decide)
-  have bP4 := hb .P4 (by decide) (by decide) (by decide)
-  have bP5 := hb .P5 (by decide) (by decide) (by decide)
-  have bP6 := hb .P6 (by decide) (by decide) (by decide)
-  have bP7 := hb .P7 (by decide) (by decide) (by decide)
-  have bP8 := hb .P8 (by decide) (by decide) (by decide)
-  have bP9 := hb .P9 (by decide) (by decide) (by decide)
-  have bP10 := hb .P10 (by decide) (by decide) (by decide)
-  have bP11 := hb .P11 (by decide) (by decide) (by decide)
-  have bP12 := hb .P12 (by decide) (by decide) (by decide)
-  have bP13 := hb .P13 (by decide) (by decide) (by decide)
-  have bP14 := hb .P14 (by decide) (by decide) (by decide)
-  have bP15 := hb .P15 (by decide) (by decide) (by decide)
-  have bP16 := hb .P16 (by decide) (by decide) (by decide)
-  have bP17 := hb .P17 (by decide) (by decide) (by decide)
-  have bP18 := hb .P18 (by decide) (by decide) (by decide)
-  have bP19 := hb .P19 (by decide) (by decide) (by decide)
-  have bP20 := hb .P20 (by decide) (by decide) (by decide)
-  simp only [table, tableRow, Row.toChecks, Row.get, protocolChecks, List.mem_cons,
-    List.not_mem_nil, or_false] at hk ⊢
-  rcases hk with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-    rfl | rfl | rfl | rfl | rfl | rfl <;>
-    simp only [bP1, bT1, bP2, bP3, bP4, bP5, bP6, bP7, bP8, bP9, bP10, bP11, bP12, bP13, bP14, bP15, bP16, bP17, bP18, bP19, bP20]
+      (evaluate π req s₁ tc clk ρ₁).result.checks.get k = (evaluate π req s₂ tc clk ρ₂).result.checks.get k :=
+  protocol_local (fun g _ => hi g.issuer) (fun _ _ _ => by rw [hs])
 
 end DelegusCheck

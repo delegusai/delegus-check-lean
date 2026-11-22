@@ -62,9 +62,13 @@ state of the service, and every possible answer from the cryptography:
 8. **An old decision re-checks the same.** Anyone holding a receipt and the
    documents it names by fingerprint can re-run the open part of the
    decision at the time recorded in the receipt and get the same 20 protocol
-   checks, whatever their own clock says (erratum 2). With today's clock
-   instead, every yes would turn into "expired" once the Grant ran out;
-   that is proven too.
+   checks, whatever their own clock says (erratum 2). A v0.2 receipt does
+   not record the relying party's Proof window, so for v0.2 the person
+   re-checking must also be given that window; with it, the result is
+   exact. With the window signed in the receipt, as v0.3 erratum 1 does it,
+   the same v0.2 rules re-check with no outside window at all. With today's
+   clock instead of the recorded one, every yes would turn into "expired"
+   once the Grant ran out; that is proven too.
 9. **The service touches its stores only where the specification says.**
    A decision reads the issuer registry once, then the revocation state
    once, then writes the one-time-use record once, in that order and
@@ -124,6 +128,12 @@ foundations; the full audit is under [Axiom audit](#axiom-audit).
   replay store behaves like one ordered ledger and keeps every record until
   its stated expiry. It does not prove that the hosted Redis does, or that
   its clock check runs atomically with the write, as erratum 5 requires.
+- **Delegus Check v0.3.** The model is of v0.2. v0.3's added checks (P21,
+  D1–D7 and T7) are not modelled, and the v0.3 conformance cases are not
+  run through the model. The one v0.3 rule it does cover is how the Proof
+  window is recorded in a v0.3 receipt (v0.3 erratum 1): that encoding is
+  proven, used in a re-verification theorem over the v0.2 rules, and checked
+  against the receipts of all 53 v0.3 cases.
 - **That the real engine equals the model.** The engine is TypeScript. The
   two are tied together by running the 52 published test cases, and over
   nine thousand altered versions of them, through both and failing if they
@@ -220,8 +230,9 @@ node scripts/differential.mjs   # model and engine on about 9,500 altered cases
 node scripts/primitives-differential.mjs   # the model's htu and JCS against the engine's
 ```
 
-The cases are those of `@delegus/conformance` 0.7.0. Until that release
-is on npm (the pinned npm release is 0.4.0, with 40 cases), run the engine
+The cases are those of `@delegus/conformance` 0.7.0 (0.8.0 leaves its
+v0.2 set unchanged and adds two v0.3 cases). Until those releases are on
+npm (the pinned npm release is 0.4.0, with 40 cases), run the engine
 commands against a source checkout of the engine with
 `scripts/engine-hook.mjs`:
 
@@ -231,10 +242,11 @@ node --import ./scripts/engine-hook.mjs scripts/compare.mjs
 node --import ./scripts/engine-hook.mjs "$DELEGUS_ENGINE_DIR/packages/conformance/src/cli.ts" --impl ./bridge/lean-impl.mjs
 node --import ./scripts/engine-hook.mjs scripts/differential.mjs
 node --import ./scripts/engine-hook.mjs scripts/primitives-differential.mjs
+node --import ./scripts/engine-hook.mjs scripts/window-field-check.mjs   # the v0.3 receipts' proof_window_ms
 ```
 
 The results above were produced that way, against the engine at the
-commit that applies errata 5, 6 and 7.
+commit that applies errata 5, 6 and 7 and v0.3 erratum 1.
 
 `lake build` fails if any proof is wrong. Every other command exits
 non-zero on any mismatch. `compare.mjs` also fails
@@ -262,6 +274,7 @@ To print the model's answer for each case, one JSON object per line:
 | `DelegusCheckSpec/Readings.lean` | Every reading where the specification is silent, in one place; the erratum 5 replay operation (`replayQuery`) and the erratum 6 P6 rule |
 | `DelegusCheckSpec/Replay.lean` | Erratum 5: the replay store, verifications against it, and the at-most-one-ALLOW theorem |
 | `scripts/engine-hook.mjs` | Runs the scripts against a source checkout of the engine |
+| `scripts/window-field-check.mjs` | v0.3 erratum 1: the model's encoding of the Proof window against every v0.3 receipt |
 | `DelegusCheckSpec/Grant.lean` | P1 (`parseGrant`, §3, field by field) and P8 (`parseProof`, §4) |
 | `DelegusCheckSpec/Rules.lean` | P2 (`findKey`), P6 (`statusOk`), P7, P15 (`validateAction`), P16–P20 (`authorize`) |
 | `DelegusCheckSpec/Evaluate.lean` | `base` (each check's rule), `table` (declarative), `staged` (engine-shaped), `evaluate`, attribution and `request_hash` |
@@ -367,7 +380,9 @@ Phase 3 statements (offline re-verification, §6.4 and erratum 2):
 |---|---|
 | `reverify_ignores_wall` | `reverify π rc art w₁ = reverify π rc art w₂`: the verifier's clock is not used |
 | `reverify_clock` | re-verification evaluates at the receipt's `evaluated_at` |
-| `reverify_reproduces` | for the receipt of any evaluation, artifacts matching its pinned hashes, the same Action, the RP's Proof window and the status-list keys: the 20 protocol checks are reproduced exactly; hypothesis: SHA-256 injective |
+| `reverify_reproduces` | v0.2: for the receipt of any evaluation, artifacts matching its pinned hashes, the same Action, the RP's Proof window (supplied by the caller, since a v0.2 receipt doesn't record it) and the status-list keys: the 20 protocol checks are reproduced exactly; hypothesis: SHA-256 injective |
+| `windowOf_encode`, `encode_windowOf` | v0.3 erratum 1's `proof_window_ms`: every window from 1 to 300 s has a well-formed encoding (absent for 60 s) that decodes back to it, and each window has exactly one encoding |
+| `reverify_reproduces_signed_window` | the v0.2 rules, with the window recorded in the receipt that way: re-verification reproduces the 20 protocol checks with no outside window, whatever window the verifier is handed |
 | `wall_clock_breaks` | an ALLOW at time `t`, re-run at any `w ≥ validUntil`, gives `GRANT_EXPIRED` |
 | `evaluated_at_bound` | under explicit signature, signing-policy and encoding hypotheses, a receipt that verifies is one Delegus issued, with its `evaluated_at` |
 
@@ -472,6 +487,9 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.reverify_reproduces' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.wall_clock_breaks' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.evaluated_at_bound' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.windowOf_encode' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.encode_windowOf' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.reverify_reproduces_signed_window' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.normalizeHtu_host_no_percent' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.staged_get' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.not_pass_of_base' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -637,7 +655,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
-OK: 194 theorems, standard axioms only
+OK: 197 theorems, standard axioms only
 ```
 
 `propext`, `Quot.sound` and `Classical.choice` are Lean's three standard
@@ -745,13 +763,15 @@ erratum 6 is `unusableStatusCode`; erratum 7 is the host check in
 **Found while proving the historical clock (Phase 3).** Offline
 re-verification (§6.4) is described as needing the receipt, the Delegus
 receipt key and the artifacts named by hash. P13 also needs the RP's Proof
-window, which the receipt does not record (§6.2) and which the RP can
-configure (§4.2). `reverify_reproduces` therefore takes the window as an
-input, as the engine's `reverifyReceipt` does (`proofWindowSeconds`,
-default 60). A receipt for an RP with a non-default window cannot be fully
-re-verified from the receipt and its artifacts alone. This is a gap in the
-text, not a change; recording the window in the receipt would be a v0.3 or
-erratum question for the owner.
+window, which a v0.2 receipt does not record (§6.2) and which the RP can
+configure (§4.2). For v0.2 this stands: `reverify_reproduces` takes the
+window as an input, as the engine's `reverifyReceipt` does for a v0.2
+receipt (`proofWindowSeconds`, default 60). v0.3 erratum 1 fixes it for
+v0.3 by signing `proof_window_ms` in the receipt;
+`reverify_reproduces_signed_window` shows the fix works for the v0.2
+rules, and `scripts/window-field-check.mjs` checks the encoding against
+every v0.3 receipt (`53 of 53 v0.3 receipts carry exactly the model's
+proof_window_ms encoding (2 carry the field)`).
 
 **Engine readings the specification leaves open**:
 

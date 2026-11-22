@@ -8,6 +8,10 @@ Delegus Check on each conformance case and prints one JSON object per case
 `delegus-check-model --is-jti <value>...`: prints `true` or `false` per
 value, the model's own §4.2 `jti` rule (`isJti`).
 
+`delegus-check-model --encode-window <seconds>...`: prints the
+`proof_window_ms` field v0.3 erratum 1 records for each window, or `null`
+when it is absent (the 60 s default).
+
 `delegus-check-model --htu`: reads one JSON string per line on standard
 input and prints the model's `htu` canonical form of each (`normalizeHtu`)
 as a JSON string, or `null`.
@@ -21,6 +25,10 @@ import DelegusCheckVectors
 open DelegusCheck DelegusCheck.Vectors
 
 def main (args : List String) : IO UInt32 := do
+  if args.head? == some "--encode-window" then
+    for v in args.drop 1 do
+      IO.println (match encodeWindow v.toNat! with | some ms => toString ms | none => "null")
+    return 0
   if args.head? == some "--is-jti" then
     for v in args.drop 1 do
       IO.println (if isJti v then "true" else "false")

@@ -236,4 +236,85 @@ theorem evaluated_at_bound {π : Prims} (dk : PubKey) (SignedBy : PubKey → Str
   obtain ⟨rc, hi, he⟩ := honly _ (hsig _ _ hv)
   exact ⟨rc, hi, henc he, by rw [henc he]⟩
 
+/-! ## The window in the receipt (v0.3 erratum 1, applied to the v0.2 rules)
+
+v0.2 receipts don't record the Proof window, so `reverify_reproduces` takes
+it as an input. v0.3 erratum 1 signs it in a `delegus-receipt-v2` body:
+`proof_window_ms`, present exactly when the window isn't the 60 000 ms
+default. What follows models that one field and shows that, with it, the
+v0.2 decision rules re-verify with no outside window. It does not model
+v0.3's other checks (P21, D1–D7, T7), so it is not a model of v0.3. -/
+
+def defaultWindowMs : Nat := 60000
+
+/-- The recorded field for a window of `windowS` seconds: absent for the
+    default. -/
+def encodeWindow (windowS : Nat) : Option Nat :=
+  if windowS * 1000 = defaultWindowMs then none else some (windowS * 1000)
+
+/-- A well-formed field: absent, or whole seconds from 1 000 to 300 000 ms
+    other than 60 000. -/
+def windowFieldOk : Option Nat → Bool
+  | none => true
+  | some ms => ms % 1000 == 0 && 1000 ≤ ms && ms ≤ 300000 && ms != defaultWindowMs
+
+/-- `w(R)`, in seconds: the field, or 60 s when absent. -/
+def windowOf : Option Nat → Nat
+  | none => 60
+  | some ms => ms / 1000
+
+/-- Every window from 1 to 300 s has a well-formed encoding, and decoding it
+    gives the window back. -/
+theorem windowOf_encode (w : Nat) (h1 : 1 ≤ w) (h2 : w ≤ 300) :
+    windowOf (encodeWindow w) = w ∧ windowFieldOk (encodeWindow w) = true := by
+  unfold encodeWindow defaultWindowMs
+  split
+  · simp [windowOf, windowFieldOk]; omega
+  · simp [windowOf, windowFieldOk, defaultWindowMs]; omega
+
+/-- Each window has exactly one encoding: a well-formed field is the
+    encoding of the window it decodes to. -/
+theorem encode_windowOf (f : Option Nat) (h : windowFieldOk f = true) : encodeWindow (windowOf f) = f := by
+  cases f with
+  | none => simp [encodeWindow, windowOf, defaultWindowMs]
+  | some ms =>
+    simp only [windowFieldOk, defaultWindowMs, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
+      bne_iff_ne, ne_eq] at h
+    obtain ⟨⟨⟨hmod, -⟩, -⟩, hne⟩ := h
+    have hm : ms / 1000 * 1000 = ms := Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero hmod)
+    simp only [encodeWindow, windowOf, defaultWindowMs, hm]
+    simp [hne]
+
+/-- A receipt carrying the window as v0.3 erratum 1 encodes it. -/
+structure WindowedReceipt where
+  receipt : Receipt
+  proofWindowMs : Option Nat
+
+def windowedReceiptOf (π : Prims) (req : Request) (s : Snapshots) (tc : TrustConfig) (clk : Clock)
+    (ρ : ReplayQuery → ReplayAnswer) : WindowedReceipt :=
+  ⟨receiptOf π req s tc clk ρ, encodeWindow req.windowS⟩
+
+/-- Re-verification that takes the window from the receipt and ignores the
+    artifacts' own `windowS`. -/
+def reverifyWindowed (π : Prims) (rc : WindowedReceipt) (art : Artifacts) (wall : Clock) : Checks :=
+  reverify π rc.receipt { art with windowS := windowOf rc.proofWindowMs } wall
+
+/-- **Re-verification with the window signed in the receipt.** For the
+    v0.2 decision rules, once the receipt carries the window as v0.3
+    erratum 1 encodes it, re-verification reproduces the 20 protocol checks
+    with no outside window: whatever window the verifier is handed is
+    ignored. (SHA-256 injective, as in `reverify_reproduces`.) -/
+theorem reverify_reproduces_signed_window {π : Prims} {req : Request} {s : Snapshots} {tc : TrustConfig}
+    {clk : Clock} {ρ : ReplayQuery → ReplayAnswer} {art : Artifacts}
+    (hinj : Function.Injective π.sha256)
+    (hm : ArtifactsMatch π (receiptOf π req s tc clk ρ) art)
+    (ha : art.action = req.action) (hk : art.statusKeys = tc.statusKeys)
+    (hw1 : 1 ≤ req.windowS) (hw2 : req.windowS ≤ 300) (wall : Clock) :
+    ∀ k ∈ protocolChecks,
+      (reverifyWindowed π (windowedReceiptOf π req s tc clk ρ) art wall).get k =
+        (evaluate π req s tc clk ρ).result.checks.get k := by
+  have hw : windowOf (encodeWindow req.windowS) = req.windowS := (windowOf_encode _ hw1 hw2).1
+  exact reverify_reproduces (art := { art with windowS := windowOf (encodeWindow req.windowS) })
+    hinj hm ha hw hk wall
+
 end DelegusCheck

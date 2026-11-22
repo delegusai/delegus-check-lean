@@ -1,0 +1,421 @@
+/-
+Copyright 2026 Inam Haq. Licensed under the Apache License, Version 2.0.
+
+Phase 5: `/revoke` and its guarantee (§7), with erratum 1's ordering. The
+revocation store follows the §7 reference design as far as the guarantee
+needs: a version counter `status_ver` per Principal, the set of revoked
+entries, and on each engine node a cache of signed status credentials with
+their versions. Histories are one sequence of atomic operations: that is the
+linearizability hypothesis, stated by the model's shape rather than assumed
+as an axiom. Attribution for restated spec text: "Delegus Specification
+v0.2, © Delegus (delegus.ai)", CC BY 4.0.
+-/
+import DelegusCheckSpec.Effects
+
+namespace DelegusCheck
+
+/-! ## The store -/
+
+/-- One revocation: Principal, status-list URL, index, and the `status_ver`
+    the revocation produced. -/
+abbrev Revocation := Did × String × Nat × Nat
+
+structure RevStore where
+  /-- `status_ver:{principal}`. -/
+  ver : Did → Nat
+  revoked : List Revocation
+
+def RevStore.empty : RevStore := ⟨fun _ => 0, []⟩
+
+def RevStore.isRevoked (σ : RevStore) (p : Did) (url : String) (i : Nat) : Prop :=
+  ∃ w, (p, url, i, w) ∈ σ.revoked
+
+def matchesEntry (p : Did) (url : String) (i : Nat) (r : Revocation) : Bool :=
+  r.1 == p && r.2.1 == url && r.2.2.1 == i
+
+/-- `POST /revoke` (§7): set the bit and increment `status_ver`. Revoking an
+    already-revoked Grant succeeds with the existing state. -/
+def revoke (p : Did) (url : String) (i : Nat) (σ : RevStore) : RevStore :=
+  if σ.revoked.any (matchesEntry p url i) then σ
+  else
+    let w := σ.ver p + 1
+    { ver := fun q => if q = p then w else σ.ver q, revoked := (p, url, i, w) :: σ.revoked }
+
+/-- The bitstring of a Principal's list `url` as of version `v`: every entry
+    revoked at a version up to `v`. -/
+def bitsAt (σ : RevStore) (p : Did) (url : String) (v : Nat) (i : Nat) : Bool :=
+  σ.revoked.any fun r => matchesEntry p url i r && decide (r.2.2.2 ≤ v)
+
+/-- Every revocation's version is at most its Principal's current version. -/
+def StoreInv (σ : RevStore) : Prop :=
+  ∀ r ∈ σ.revoked, r.2.2.2 ≤ σ.ver r.1
+
+/-! ## Engine nodes and the status read -/
+
+/-- A node's cache: `{(principal, url) → (version, signed credential)}`. -/
+abbrev Cache := Did × String → Option (Nat × String)
+
+/-- The Delegus status-list signer: the credential for list `url` with
+    these bits at this version. -/
+abbrev Issuer := String → (Nat → Bool) → Nat → String
+
+/-- The credential issued at the current version. -/
+def freshCred (σ : RevStore) (issue : Issuer) (p : Did) (url : String) : String :=
+  issue url (bitsAt σ p url (σ.ver p)) (σ.ver p)
+
+def refreshed (σ : RevStore) (issue : Issuer) (p : Did) (url : String) (c : Cache) : Cache :=
+  fun k => if k = (p, url) then some (σ.ver p, freshCred σ issue p url) else c k
+
+/-- `[read status_ver; refresh cached status credential if needed]` (§7):
+    read the current version; if the cached credential is at least that new,
+    use it; otherwise issue one at the current version and cache it. -/
+def statusRead (σ : RevStore) (issue : Issuer) (p : Did) (url : String) (c : Cache) : StatusLookup × Cache :=
+  match c (p, url) with
+  | some (cv, cred) =>
+    if σ.ver p ≤ cv then (.snapshot cred, c)
+    else (.snapshot (freshCred σ issue p url), refreshed σ issue p url c)
+  | none => (.snapshot (freshCred σ issue p url), refreshed σ issue p url c)
+
+/-- Every cached credential is the one the signer issues for the bits as of
+    its version, and is no newer than the store. -/
+def CacheInv (σ : RevStore) (issue : Issuer) (c : Cache) : Prop :=
+  ∀ p url cv cred, c (p, url) = some (cv, cred) → cv ≤ σ.ver p ∧ cred = issue url (bitsAt σ p url cv) cv
+
+/-! ## Store facts -/
+
+theorem storeInv_empty : StoreInv RevStore.empty := by simp [StoreInv, RevStore.empty]
+
+theorem matchesEntry_iff (p : Did) (url : String) (i : Nat) (r : Revocation) :
+    matchesEntry p url i r = true ↔ r.1 = p ∧ r.2.1 = url ∧ r.2.2.1 = i := by
+  simp [matchesEntry, and_assoc]
+
+/-- `/revoke` is idempotent (§7). -/
+theorem revoke_idempotent (p : Did) (url : String) (i : Nat) (σ : RevStore) :
+    revoke p url i (revoke p url i σ) = revoke p url i σ := by
+  unfold revoke
+  split
+  · simp_all
+  · simp [matchesEntry]
+
+/-- After `/revoke` returns, the Grant is revoked. -/
+theorem revoke_revokes (p : Did) (url : String) (i : Nat) (σ : RevStore) :
+    (revoke p url i σ).isRevoked p url i := by
+  unfold revoke RevStore.isRevoked
+  split
+  · rename_i h
+    obtain ⟨r, hr, hm⟩ := List.any_eq_true.mp h
+    rw [matchesEntry_iff] at hm
+    obtain ⟨rfl, rfl, rfl⟩ := hm
+    exact ⟨r.2.2.2, hr⟩
+  · exact ⟨_, List.mem_cons_self ..⟩
+
+/-- Revocation is permanent (§7): no later `/revoke` undoes it. -/
+theorem revoke_permanent {σ : RevStore} {p : Did} {url : String} {i : Nat} (h : σ.isRevoked p url i)
+    (p' : Did) (url' : String) (i' : Nat) : (revoke p' url' i' σ).isRevoked p url i := by
+  obtain ⟨w, hw⟩ := h
+  unfold revoke
+  split
+  · exact ⟨w, hw⟩
+  · exact ⟨w, List.mem_cons_of_mem _ hw⟩
+
+theorem revoke_ver_mono (p : Did) (url : String) (i : Nat) (σ : RevStore) (q : Did) :
+    σ.ver q ≤ (revoke p url i σ).ver q := by
+  unfold revoke
+  split
+  · exact Nat.le_refl _
+  · by_cases hq : q = p
+    · subst hq; simp
+    · simp [hq]
+
+theorem storeInv_revoke {σ : RevStore} (h : StoreInv σ) (p : Did) (url : String) (i : Nat) :
+    StoreInv (revoke p url i σ) := by
+  intro r hr
+  unfold revoke at hr ⊢
+  by_cases hm : σ.revoked.any (matchesEntry p url i) = true
+  · simp only [hm, ite_true] at hr ⊢
+    exact h r hr
+  · simp only [hm, Bool.false_eq_true, ite_false, List.mem_cons] at hr ⊢
+    rcases hr with rfl | hr
+    · simp
+    · have := h r hr
+      by_cases hq : r.1 = p
+      · simp only [hq, ite_true]; rw [hq] at this; omega
+      · simp only [hq, ite_false]; exact this
+
+/-- A revocation made at a version above `v` does not change the bits as of `v`. -/
+theorem bitsAt_revoke {σ : RevStore} (q : Did) (url : String) (v : Nat) (hv : v ≤ σ.ver q)
+    (p : Did) (url' : String) (i' : Nat) :
+    bitsAt (revoke p url' i' σ) q url v = bitsAt σ q url v := by
+  funext j
+  unfold revoke
+  split
+  · rfl
+  · simp only [bitsAt, List.any_cons]
+    have : (matchesEntry q url j (p, url', i', σ.ver p + 1) && decide (σ.ver p + 1 ≤ v)) = false := by
+      by_cases hq : p = q
+      · subst hq; simp; omega
+      · simp only [matchesEntry, Bool.and_eq_false_iff]
+        left; left; left
+        simpa using hq
+    rw [this, Bool.false_or]
+
+theorem cacheInv_revoke {σ : RevStore} {issue : Issuer} {c : Cache} (h : CacheInv σ issue c)
+    (p : Did) (url : String) (i : Nat) : CacheInv (revoke p url i σ) issue c := by
+  intro q u cv cred hc
+  obtain ⟨hle, heq⟩ := h q u cv cred hc
+  exact ⟨Nat.le_trans hle (revoke_ver_mono p url i σ q), by rw [bitsAt_revoke q u cv hle]; exact heq⟩
+
+theorem cacheInv_refreshed {σ : RevStore} {issue : Issuer} {c : Cache} (h : CacheInv σ issue c)
+    (p : Did) (url : String) : CacheInv σ issue (refreshed σ issue p url c) := by
+  intro q u cv cred hc
+  unfold refreshed at hc
+  split at hc
+  · rename_i hk
+    simp only [Prod.mk.injEq] at hk
+    obtain ⟨rfl, rfl⟩ := hk
+    simp only [Option.some.injEq, Prod.mk.injEq] at hc
+    obtain ⟨rfl, rfl⟩ := hc
+    exact ⟨Nat.le_refl _, rfl⟩
+  · exact h q u cv cred hc
+
+theorem cacheInv_read {σ : RevStore} {issue : Issuer} {c : Cache} (h : CacheInv σ issue c)
+    (p : Did) (url : String) : CacheInv σ issue (statusRead σ issue p url c).2 := by
+  unfold statusRead
+  split
+  · split
+    · exact h
+    · exact cacheInv_refreshed h p url
+  · exact cacheInv_refreshed h p url
+
+theorem bitsAt_of_revoked {σ : RevStore} (hs : StoreInv σ) {p : Did} {url : String} {i : Nat}
+    (hr : σ.isRevoked p url i) {v : Nat} (hv : σ.ver p ≤ v) : bitsAt σ p url v i = true := by
+  obtain ⟨w, hw⟩ := hr
+  have := hs _ hw
+  simp only at this
+  simp only [bitsAt, List.any_eq_true]
+  exact ⟨_, hw, by simp [matchesEntry]; omega⟩
+
+/-- **The status read sees every committed revocation** (`cache_fresh`): it
+    returns a credential the signer issued at a version at least the
+    current `status_ver`, whose bits include every revocation already made. -/
+theorem statusRead_fresh {σ : RevStore} {issue : Issuer} {c : Cache} (hs : StoreInv σ)
+    (hc : CacheInv σ issue c) (p : Did) (url : String) :
+    ∃ bits v, (statusRead σ issue p url c).1 = .snapshot (issue url bits v) ∧ σ.ver p ≤ v ∧
+      ∀ i, σ.isRevoked p url i → bits i = true := by
+  unfold statusRead
+  split
+  · rename_i cv cred hcache
+    split
+    · rename_i hle
+      obtain ⟨-, rfl⟩ := hc p url cv cred hcache
+      exact ⟨_, cv, rfl, hle, fun i hr => bitsAt_of_revoked hs hr hle⟩
+    · exact ⟨_, _, rfl, Nat.le_refl _, fun i hr => bitsAt_of_revoked hs hr (Nat.le_refl _)⟩
+  · exact ⟨_, _, rfl, Nat.le_refl _, fun i hr => bitsAt_of_revoked hs hr (Nat.le_refl _)⟩
+
+/-! ## Verification against the store -/
+
+/-- Delegus's status-list signer is faithful at this verification's clock
+    and trust configuration: the credential it issues for list `url` with
+    `bits` is usable and shows bit `i` as `bits i`. (An assumption about the
+    signer and the credential's validity window, stated as a hypothesis.) -/
+def FaithfulSigner (π : Prims) (tc : TrustConfig) (clk : Clock) (issue : Issuer) : Prop :=
+  ∀ url bits v idx, isDecimal idx = true →
+    statusBit π tc clk.nowMs (issue url bits v) url idx = some (bits (decimalValue idx))
+
+/-- One verification's inputs other than the revocation store. -/
+structure VerifyCtx where
+  π : Prims
+  req : Request
+  issuer : Did → IssuerLookup
+  tc : TrustConfig
+  clk : Clock
+  ρ : ReplayQuery → ReplayAnswer
+
+def VerifyCtx.withStatus (ctx : VerifyCtx) (st : String → StatusLookup) : Env :=
+  envOf ctx.π ctx.req ⟨ctx.issuer, st⟩ ctx.tc ctx.clk ctx.ρ
+
+def VerifyCtx.eval (ctx : VerifyCtx) (st : String → StatusLookup) : Evaluation :=
+  evaluate ctx.π ctx.req ⟨ctx.issuer, st⟩ ctx.tc ctx.clk ctx.ρ
+
+/-- A verification on a node with cache `c`: the status read happens once
+    the Grant is authentic (P3), as in `evaluateM`, and may refresh the
+    cache; the decision is `evaluate` with that answer. -/
+def verifyAt (σ : RevStore) (issue : Issuer) (c : Cache) (ctx : VerifyCtx) : Evaluation × Cache :=
+  match parseGrant ctx.π ctx.req.grant with
+  | .error _ => (ctx.eval (fun _ => .unavailable), c)
+  | .ok g =>
+    if (staged (ctx.withStatus fun _ => .unavailable)).get .P3 = .pass then
+      let r := statusRead σ issue g.issuer g.statusUrl c
+      (ctx.eval (fun u => if u = g.statusUrl then r.1 else .unavailable), r.2)
+    else (ctx.eval (fun _ => .unavailable), c)
+
+theorem grant_statusIndex_decimal {π : Prims} {t : String} {g : GrantF} (h : parseGrant π t = .ok g) :
+    isDecimal g.statusIndex = true := by
+  obtain ⟨j, -, -, -, hp⟩ := parseGrant_ok h
+  unfold grantPayload at hp
+  peel hp
+  simp_all
+
+/-- P3 does not read the status store. -/
+theorem p3_status_indep (ctx : VerifyCtx) (st₁ st₂ : String → StatusLookup) :
+    (staged (ctx.withStatus st₁)).get .P3 = (staged (ctx.withStatus st₂)).get .P3 := by
+  rw [staged_eq_table, staged_eq_table]; rfl
+
+/-- **A committed revocation means DENY** (§7), for one verification: if the
+    Grant's entry is revoked in the store the verification reads, and the
+    node's cache is faithful, the decision is DENY. -/
+theorem verify_denies_revoked {σ : RevStore} {issue : Issuer} {c : Cache} {ctx : VerifyCtx} {g : GrantF}
+    (hs : StoreInv σ) (hc : CacheInv σ issue c) (hf : FaithfulSigner ctx.π ctx.tc ctx.clk issue)
+    (hg : parseGrant ctx.π ctx.req.grant = .ok g)
+    (hr : σ.isRevoked g.issuer g.statusUrl (decimalValue g.statusIndex)) :
+    (verifyAt σ issue c ctx).1.result.decision = .deny := by
+  unfold verifyAt
+  simp only [hg]
+  split
+  · obtain ⟨bits, v, hread, -, hbits⟩ := statusRead_fresh hs hc g.issuer g.statusUrl
+    apply deny_of_base .P6
+    simp only [base, Env.grant, hg, p6Of, p6From, ite_true, hread,
+      hf _ _ _ _ (grant_statusIndex_decimal hg), hbits _ hr]
+    simp
+  · apply deny_of_base .P6
+    simp [base, Env.grant, hg, p6Of, p6From]
+
+/-- …and if every check before P6 passed, the reason is
+    `AUTHORITY_REVOKED`, whatever the replay store says (P6 precedes T5). -/
+theorem verify_reason_revoked {σ : RevStore} {issue : Issuer} {c : Cache} {ctx : VerifyCtx} {g : GrantF}
+    (hs : StoreInv σ) (hc : CacheInv σ issue c) (hf : FaithfulSigner ctx.π ctx.tc ctx.clk issue)
+    (hg : parseGrant ctx.π ctx.req.grant = .ok g)
+    (hr : σ.isRevoked g.issuer g.statusUrl (decimalValue g.statusIndex))
+    (hpre : ∀ k ∈ [Check.P1, .T1, .T2, .T3, .P2, .P3, .P4, .P5],
+      (verifyAt σ issue c ctx).1.result.checks.get k = .pass) :
+    (verifyAt σ issue c ctx).1.result.reason = some .AUTHORITY_REVOKED := by
+  unfold verifyAt at hpre ⊢
+  simp only [hg] at hpre ⊢
+  split
+  · rename_i h3
+    obtain ⟨bits, v, hread, -, hbits⟩ := statusRead_fresh hs hc g.issuer g.statusUrl
+    simp only [h3, ite_true] at hpre
+    apply revoked_beats_replayed _ hpre
+    rw [staged_get]
+    have hp3 := hpre .P3 (by simp)
+    simp only [enginePrereq, List.all_cons, List.all_nil, Bool.and_true]
+    simp only [VerifyCtx.eval, evaluate_result, kernel, hread] at hp3
+    simp [hp3, base, Env.grant, hg, p6Of, p6From, hread,
+      hf _ _ _ _ (grant_statusIndex_decimal hg), hbits _ hr]
+  · rename_i h3
+    simp only [h3, ite_false] at hpre
+    have hp3 := hpre .P3 (by simp)
+    simp only [VerifyCtx.eval, evaluate_result, kernel] at hp3
+    exact absurd hp3 h3
+
+/-! ## Histories -/
+
+structure World where
+  σ : RevStore
+  cache : Nat → Cache
+
+def World.init : World := ⟨RevStore.empty, fun _ _ => none⟩
+
+/-- One atomic operation of a linearizable history: a `/revoke` that
+    returned, or a `/verify` on an engine node. -/
+inductive Event
+  | revoke (p : Did) (url : String) (i : Nat)
+  | verify (node : Nat) (ctx : VerifyCtx)
+
+def step (issue : Issuer) (w : World) : Event → World
+  | .revoke p url i => { w with σ := revoke p url i w.σ }
+  | .verify n ctx =>
+    let r := verifyAt w.σ issue (w.cache n) ctx
+    { w with cache := fun m => if m = n then r.2 else w.cache m }
+
+def runEvents (issue : Issuer) : World → List Event → World
+  | w, [] => w
+  | w, ev :: es => runEvents issue (step issue w ev) es
+
+def WorldInv (issue : Issuer) (w : World) : Prop :=
+  StoreInv w.σ ∧ ∀ n, CacheInv w.σ issue (w.cache n)
+
+theorem worldInv_init (issue : Issuer) : WorldInv issue World.init :=
+  ⟨storeInv_empty, fun _ _ _ _ _ h => by simp [World.init] at h⟩
+
+theorem cacheInv_verify {σ : RevStore} {issue : Issuer} {c : Cache} (h : CacheInv σ issue c) (ctx : VerifyCtx) :
+    CacheInv σ issue (verifyAt σ issue c ctx).2 := by
+  unfold verifyAt
+  split
+  · exact h
+  · split
+    · exact cacheInv_read h _ _
+    · exact h
+
+theorem worldInv_step {issue : Issuer} {w : World} (h : WorldInv issue w) (ev : Event) :
+    WorldInv issue (step issue w ev) := by
+  obtain ⟨hs, hc⟩ := h
+  cases ev with
+  | revoke p url i => exact ⟨storeInv_revoke hs p url i, fun n => cacheInv_revoke (hc n) p url i⟩
+  | verify n ctx =>
+    refine ⟨hs, fun m => ?_⟩
+    simp only [step]
+    split
+    · exact cacheInv_verify (hc n) ctx
+    · exact hc m
+
+theorem worldInv_run (issue : Issuer) : ∀ (es : List Event) (w : World), WorldInv issue w →
+    WorldInv issue (runEvents issue w es)
+  | [], _, h => h
+  | ev :: es, _, h => worldInv_run issue es _ (worldInv_step h ev)
+
+theorem revoked_step {issue : Issuer} {w : World} {p : Did} {url : String} {i : Nat}
+    (h : w.σ.isRevoked p url i) (ev : Event) : (step issue w ev).σ.isRevoked p url i := by
+  cases ev with
+  | revoke p' url' i' => exact revoke_permanent h p' url' i'
+  | verify n ctx => exact h
+
+theorem revoked_run {issue : Issuer} {p : Did} {url : String} {i : Nat} :
+    ∀ (es : List Event) (w : World), w.σ.isRevoked p url i → (runEvents issue w es).σ.isRevoked p url i
+  | [], _, h => h
+  | ev :: es, _, h => revoked_run es _ (revoked_step h ev)
+
+theorem revoke_in_history {issue : Issuer} {p : Did} {url : String} {i : Nat} :
+    ∀ (es : List Event) (w : World), Event.revoke p url i ∈ es → (runEvents issue w es).σ.isRevoked p url i
+  | [], _, h => by simp at h
+  | ev :: es, w, h => by
+    simp only [List.mem_cons] at h
+    rcases h with rfl | h
+    · exact revoked_run es _ (revoke_revokes p url i w.σ)
+    · exact revoke_in_history es _ h
+
+/-- **`revoke_then_deny` (§7, with erratum 1).** In any linearizable history
+    from the empty store, once a `/revoke` of a Grant's status entry has
+    returned, every later verification of that Grant, on any engine node, is
+    DENY. Hypothesis: Delegus's status-list signer is faithful at that
+    verification's clock and keys. -/
+theorem revoke_then_deny (issue : Issuer) (before : List Event) {p : Did} {url : String} {i : Nat}
+    (hrev : Event.revoke p url i ∈ before) (n : Nat) (ctx : VerifyCtx) {g : GrantF}
+    (hg : parseGrant ctx.π ctx.req.grant = .ok g)
+    (hm : g.issuer = p ∧ g.statusUrl = url ∧ decimalValue g.statusIndex = i)
+    (hf : FaithfulSigner ctx.π ctx.tc ctx.clk issue) :
+    let w := runEvents issue World.init before
+    (verifyAt w.σ issue (w.cache n) ctx).1.result.decision = .deny := by
+  intro w
+  obtain ⟨hs, hc⟩ := worldInv_run issue before World.init (worldInv_init issue)
+  obtain ⟨rfl, rfl, rfl⟩ := hm
+  exact verify_denies_revoked hs (hc n) hf hg (revoke_in_history before World.init hrev)
+
+/-- **`revoke_then_reason`** (§15 step 5, erratum 1): the same, with a fresh
+    Proof whose other checks pass: the reason is `AUTHORITY_REVOKED`. -/
+theorem revoke_then_reason (issue : Issuer) (before : List Event) {p : Did} {url : String} {i : Nat}
+    (hrev : Event.revoke p url i ∈ before) (n : Nat) (ctx : VerifyCtx) {g : GrantF}
+    (hg : parseGrant ctx.π ctx.req.grant = .ok g)
+    (hm : g.issuer = p ∧ g.statusUrl = url ∧ decimalValue g.statusIndex = i)
+    (hf : FaithfulSigner ctx.π ctx.tc ctx.clk issue)
+    (hpre : let w := runEvents issue World.init before
+      ∀ k ∈ [Check.P1, .T1, .T2, .T3, .P2, .P3, .P4, .P5],
+        (verifyAt w.σ issue (w.cache n) ctx).1.result.checks.get k = .pass) :
+    let w := runEvents issue World.init before
+    (verifyAt w.σ issue (w.cache n) ctx).1.result.reason = some .AUTHORITY_REVOKED := by
+  intro w
+  obtain ⟨hs, hc⟩ := worldInv_run issue before World.init (worldInv_init issue)
+  obtain ⟨rfl, rfl, rfl⟩ := hm
+  exact verify_reason_revoked hs (hc n) hf hg (revoke_in_history before World.init hrev) hpre
+
+end DelegusCheck

@@ -10,7 +10,7 @@ a precise model in Lean 4, a tool that checks mathematical proofs by
 machine, and proves properties of them that hold for every possible input,
 not only the cases we happened to test.
 
-Four stages are done. Phase 0 proved the order of the checks, the
+Phases 0 to 5 are done; only the one-time-use window theorems wait (on erratum 4). Phase 0 proved the order of the checks, the
 yes-or-no answer and the reason given for a no. Phase 1 writes every one of
 the 24 checks as a real rule, field by field, and proves what the
 specification promises about the whole decision. Phase 2 ties the model to
@@ -18,7 +18,9 @@ the real engine: the published conformance runner runs the model as an
 implementation, and thousands of altered cases go through both. Phase 3
 proves that an old decision re-checks the same, years later. Phase 4 (the
 parts that do not depend on the replay window) proves where the service
-reads and writes its stores during a decision.
+reads and writes its stores during a decision. Phase 5 proves that a
+cancelled Grant stays cancelled: once a revocation has been confirmed,
+every later check of that Grant, on any server, is a no.
 
 ## What is proven
 
@@ -66,7 +68,15 @@ state of the service, and every possible answer from the cryptography:
    first fourteen checks all passed, so a cancelled, forged or expired
    request never uses up a Proof. A request that is both cancelled and
    replayed is refused as cancelled (erratum 1).
-10. **The protections the specification lists (§13.1) hold in the model.**
+10. **A cancelled Grant stays cancelled** (§7). Once Delegus has confirmed a
+    revocation, every verification of that Grant that starts afterwards, on
+    any server, with any cache, is refused; if nothing else was wrong, the
+    reason given is "revoked", even when the same Proof is also being
+    replayed. Revoking twice changes nothing, and nothing un-revokes. This
+    assumes the stores behave as one ordered ledger (the model is one
+    sequence of operations) and that Delegus's status-list signer publishes
+    correct, current lists.
+11. **The protections the specification lists (§13.1) hold in the model.**
    A Proof sent to a different service, an expired or not-yet-valid Grant, a
    cancelled Grant, a compromised key, an unknown or unverified issuer, a
    status list not signed by Delegus, and a service the Grant excludes are
@@ -84,9 +94,11 @@ foundations; the full audit is under [Axiom audit](#axiom-audit).
   decoding are inputs to the model, not part of it. Where a theorem needs
   "signatures cannot be forged" or "hashes do not collide", it says so as an
   explicit assumption.
-- **The live databases.** Revocation and one-time use depend on how the
-  stores behave over many requests. Those proofs are later phases and will
-  assume the stores behave like one ordered ledger.
+- **The live databases.** The revocation proof assumes the stores behave
+  like one ordered ledger and that the status-list signer is correct; it
+  does not prove that the hosted Redis and Postgres behave that way, and a
+  verification already in flight when a revocation completes is not
+  covered (the specification does not claim it is).
 - **One-time use (replay).** The replay check is modelled as the frozen
   specification states it, and an unavailable replay store is proven to give
   a no. The theorem that a Proof is accepted at most once waits for the
@@ -198,6 +210,7 @@ To print the model's answer for each case, one JSON object per line:
 | `DelegusCheckSpec/Facts.lean` | What a passing parser guarantees |
 | `DelegusCheckSpec/Phase1.lean`, `Phase1Rows.lean` | Phase 1 theorems |
 | `DelegusCheckSpec/Effects.lean` | Phase 4: `Op`, `Seams`, the effectful evaluator `evaluateM`, the recording run `traceOf`, and the operation-order theorems |
+| `DelegusCheckSpec/Revocation.lean` | Phase 5: the revocation store (`status_ver`, revoked entries), node caches, the status read, histories, and the §7 theorems |
 | `DelegusCheckSpec/Historical.lean` | Phase 3: `Receipt`, `receiptOf`, `Artifacts`, `reverify`, and the historical-clock theorems |
 | `scripts/readme-axioms.py` | Refreshes the axiom audit below from `check-axioms.sh` |
 | `DelegusCheckVectors/Case.lean` | Running the model on a case (not used by any proof) |
@@ -300,6 +313,24 @@ Phase 4 statements (the hot path's operations, §5.5, §7, erratum 1):
 | `status_read_before_replay_write` | the revocation read precedes the replay write |
 | `revoked_beats_replayed` | everything before P6 passed and P6 is `AUTHORITY_REVOKED` → that is the reason, whatever the replay store says |
 | `seams_congr` | two service states that answer the operations actually performed the same way give the same result and trace |
+
+Phase 5 statements (`/revoke` and its guarantee, §7 with erratum 1):
+
+| Theorem | Statement |
+|---|---|
+| `revoke_idempotent` | `revoke g (revoke g σ) = revoke g σ` |
+| `revoke_revokes`, `revoke_permanent` | after `/revoke` the entry is revoked, and no later operation un-revokes it |
+| `storeInv_revoke`, `cacheInv_revoke`, `cacheInv_read`, `worldInv_run` | the store and every node cache stay consistent through any history |
+| `statusRead_fresh` | the status read returns a credential issued at a version at least the current `status_ver`, showing every revocation already made |
+| `verify_denies_revoked` | a verification of a Grant whose entry is revoked in the store it reads is DENY |
+| `verify_reason_revoked` | …and if every check before P6 passed, the reason is `AUTHORITY_REVOKED`, whatever the replay store says |
+| `revoke_then_deny` | in any history from the empty store, once `/revoke` returned, every later verification of that Grant on any node is DENY |
+| `revoke_then_reason` | the §15 step 5 test: revoke, then the same action with a fresh Proof whose other checks pass → `AUTHORITY_REVOKED` |
+
+The hypotheses are explicit: the history is one sequence of atomic
+operations (linearizability, by the model's shape), and `FaithfulSigner`:
+the credential Delegus's signer issues for a list is usable at the
+verification's clock and keys and shows its bits correctly.
 
 Phase 0 statements (the kernel, for any outcomes):
 
@@ -428,6 +459,32 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.findKey_safe' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm01_grant_signed' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm03_proof_signed_by_agent' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.storeInv_empty' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.matchesEntry_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoke_idempotent' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoke_revokes' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoke_permanent' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoke_ver_mono' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.storeInv_revoke' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.bitsAt_revoke' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.cacheInv_revoke' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.cacheInv_refreshed' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.cacheInv_read' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.bitsAt_of_revoked' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.statusRead_fresh' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.grant_statusIndex_decimal' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.p3_status_indep' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.verify_denies_revoked' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.verify_reason_revoked' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.worldInv_init' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.cacheInv_verify' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.worldInv_step' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.worldInv_run' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoked_step' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoked_run' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoke_in_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoke_then_deny' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoke_then_reason' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.gate_nil' does not depend on any axioms
 'DelegusCheck.gate_cons' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.gate_pass' depends on axioms: [propext, Quot.sound]
@@ -470,7 +527,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
-OK: 152 theorems, standard axioms only
+OK: 178 theorems, standard axioms only
 ```
 
 `propext`, `Quot.sound` and `Classical.choice` are Lean's three standard

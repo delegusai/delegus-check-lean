@@ -74,14 +74,16 @@ def p5Of (e : Env) (g : GrantF) : Outcome := ok (decide (e.clk.nowMs < g.validUn
 /-- P6: no credential is `SERVICE_UNAVAILABLE` (§7); a usable credential
     with the bit set is `AUTHORITY_REVOKED`; an unusable credential gives
     `unusableStatusCode` (see `Readings.lean`). -/
-def p6Of (e : Env) (g : GrantF) : Outcome :=
-  match e.s.status g.statusUrl with
+def p6From (π : Prims) (tc : TrustConfig) (clk : Clock) (st : StatusLookup) (g : GrantF) : Outcome :=
+  match st with
   | .unavailable => .fail .SERVICE_UNAVAILABLE
   | .snapshot cred =>
-    match statusBit e.π e.tc e.clk.nowMs cred g.statusUrl g.statusIndex with
+    match statusBit π tc clk.nowMs cred g.statusUrl g.statusIndex with
     | some false => .pass
     | some true => .fail .AUTHORITY_REVOKED
     | none => .fail unusableStatusCode
+
+def p6Of (e : Env) (g : GrantF) : Outcome := p6From e.π e.tc e.clk (e.s.status g.statusUrl) g
 
 def p7Of (e : Env) (g : GrantF) : Outcome := ok (audienceOk g e.req.rp) .AUDIENCE_MISMATCH
 def p9Of (e : Env) (p : ProofF) : Outcome := ok (e.π.sigOk p.agentKey p.signingInput p.signature) .PROOF_SIGNATURE_INVALID
@@ -212,21 +214,28 @@ def actionStage (e : Env) (g : GrantF) (r : Row) : Row :=
     let au := authorize g.authority a
     { r with p15 := .pass, p16 := au.p16, p17 := au.p17, p18 := au.p18, p19 := au.p19, p20 := au.p20 }
 
+/-- P4–P7 and P9–P14 all pass (P1–P3 and P8 have passed to get here): the
+    condition for the replay operation (§5.3, §7, erratum 1). -/
+def earlyPass (e : Env) (g : GrantF) (p4 p5 p6 p7 : Outcome) (p : ProofF) : Bool :=
+  [p4, p5, p6, p7, p9Of e p, p10Of g p, p11Of g p, p12Of e p, p13Of e p, p14Of e p].all (· == .pass)
+
+/-- P1–P14 and the trust checks once P8 passed, given T5's outcome. -/
+def earlyRow (e : Env) (g : GrantF) (t2 t3 p4 p5 p6 p7 : Outcome) (p : ProofF) (t5 : Outcome) : Row :=
+  { p1 := .pass, t1 := .pass, t2, t3, p2 := .pass, p3 := .pass, p4, p5, p6, p7,
+    p8 := .pass, p9 := p9Of e p, p10 := p10Of g p, p11 := p11Of g p, p12 := p12Of e p,
+    p13 := p13Of e p, p14 := p14Of e p, t5 }
+
+/-- The row once P8 passed, given T5's outcome. -/
+def proofRow (e : Env) (g : GrantF) (t2 t3 p4 p5 p6 p7 : Outcome) (p : ProofF) (t5 : Outcome) : Row :=
+  let r := earlyRow e g t2 t3 p4 p5 p6 p7 p t5
+  if p14Of e p == .pass then actionStage e g r else r
+
 /-- P9–P14, the replay operation and T5, then P15–P20. Reached once P1–P8
     and T1 passed. -/
 def proofStage (e : Env) (g : GrantF) (t2 t3 p4 p5 p6 p7 : Outcome) (p : ProofF) : Row :=
-  let p9 := p9Of e p
-  let p10 := p10Of g p
-  let p11 := p11Of g p
-  let p12 := p12Of e p
-  let p13 := p13Of e p
-  let p14 := p14Of e p
   -- [atomic replay SET NX], only after P1–P14 pass (§5.3, §7)
-  let t5 := if [p4, p5, p6, p7, p9, p10, p11, p12, p13, p14].all (· == .pass)
-    then replayOutcome (e.ρ (e.query p)) else .skipped
-  let r : Row := { p1 := .pass, t1 := .pass, t2, t3, p2 := .pass, p3 := .pass, p4, p5, p6, p7,
-                   p8 := .pass, p9, p10, p11, p12, p13, p14, t5 }
-  if p14 == .pass then actionStage e g r else r
+  proofRow e g t2 t3 p4 p5 p6 p7 p
+    (if earlyPass e g p4 p5 p6 p7 p then replayOutcome (e.ρ (e.query p)) else .skipped)
 
 /-- The engine-shaped evaluator. -/
 def stagedRow (e : Env) : Row :=

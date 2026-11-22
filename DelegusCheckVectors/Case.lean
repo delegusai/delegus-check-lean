@@ -179,7 +179,14 @@ def outcomeJson : Outcome → Json
   | .fail _ => .bool false
   | .skipped => .str "skipped"
 
-def resultJson (id : String) (ev : Evaluation) : Json :=
+def opJson : Op → Json
+  | .issuer d => Json.arr #[.str "issuer", .str d]
+  | .status u => Json.arr #[.str "status", .str u]
+  | .replay q => match q.expiry with
+    | .px ms => Json.arr #[.str "replay", .str q.rp, .str q.jti, .str "PX", (ms : Int)]
+    | .pxat ms => Json.arr #[.str "replay", .str q.rp, .str q.jti, .str "PXAT", ms]
+
+def resultJson (id : String) (ev : Evaluation) (trace : List Op := []) : Json :=
   let r := ev.result
   let c := r.checks
   Json.mkObj [
@@ -194,12 +201,19 @@ def resultJson (id : String) (ev : Evaluation) : Json :=
     ("principal", match ev.attribution with | some a => .str a.principal | none => .null),
     ("request_hash", match ev.requestHash with | some h => .str h | none => .null),
     ("prerequisite_table_followed", .bool (exactB enginePrereq c)),
-    ("reason_codes_well_formed", .bool (wellCodedB c))
+    ("reason_codes_well_formed", .bool (wellCodedB c)),
+    ("trace", Json.arr (trace.map opJson).toArray)
   ]
 
 def runLoaded (l : Loaded) : Evaluation :=
   let e := l.env
   evaluate e.π e.req e.s e.tc e.clk e.ρ
+
+/-- The operations the evaluation performs, from the recording run of the
+    effectful evaluator. -/
+def traceLoaded (l : Loaded) : List Op :=
+  let e := l.env
+  traceOf e.π e.req e.s e.tc e.clk e.ρ
 
 /-- The `.json` files of a directory, sorted by name. -/
 def caseFiles (dir : System.FilePath) : IO (Array System.FilePath) := do

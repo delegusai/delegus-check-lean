@@ -16,7 +16,9 @@ the 24 checks as a real rule, field by field, and proves what the
 specification promises about the whole decision. Phase 2 ties the model to
 the real engine: the published conformance runner runs the model as an
 implementation, and thousands of altered cases go through both. Phase 3
-proves that an old decision re-checks the same, years later.
+proves that an old decision re-checks the same, years later. Phase 4 (the
+parts that do not depend on the replay window) proves where the service
+reads and writes its stores during a decision.
 
 ## What is proven
 
@@ -56,7 +58,15 @@ state of the service, and every possible answer from the cryptography:
    checks, whatever their own clock says (erratum 2). With today's clock
    instead, every yes would turn into "expired" once the Grant ran out;
    that is proven too.
-9. **The protections the specification lists (§13.1) hold in the model.**
+9. **The service touches its stores only where the specification says.**
+   A decision reads the issuer registry once, then the revocation state
+   once, then writes the one-time-use record once, in that order and
+   nothing else. The revocation state is read only after the Grant's
+   signature checked out. The one-time-use record is written only when the
+   first fourteen checks all passed, so a cancelled, forged or expired
+   request never uses up a Proof. A request that is both cancelled and
+   replayed is refused as cancelled (erratum 1).
+10. **The protections the specification lists (§13.1) hold in the model.**
    A Proof sent to a different service, an expired or not-yet-valid Grant, a
    cancelled Grant, a compromised key, an unknown or unverified issuer, a
    status list not signed by Delegus, and a service the Grant excludes are
@@ -129,8 +139,13 @@ through both the model and the engine. There is no expected answer; the
 two must simply agree:
 
 ```
-4303 of 4303 mutants agree on decision, reason, both layer results, all 24 checks, request_hash and principal; 0 disagreement(s)
+4303 of 4303 mutants agree on decision, reason, both layer results, all 24 checks, request_hash, principal and the operation trace; 0 disagreement(s)
 ```
+
+The operation trace is the list of service operations each side performed
+(issuer read, revocation read, replay write: which ones, in which order,
+with which arguments). The engine's comes from its in-memory service's call
+log; the model's from a recording run of its effectful evaluator.
 
 The mutants cover every reason code and both answers (108 ALLOW, 4195
 DENY).
@@ -182,6 +197,7 @@ To print the model's answer for each case, one JSON object per line:
 | `DelegusCheckSpec/Staged.lean` | `staged_eq_table` |
 | `DelegusCheckSpec/Facts.lean` | What a passing parser guarantees |
 | `DelegusCheckSpec/Phase1.lean`, `Phase1Rows.lean` | Phase 1 theorems |
+| `DelegusCheckSpec/Effects.lean` | Phase 4: `Op`, `Seams`, the effectful evaluator `evaluateM`, the recording run `traceOf`, and the operation-order theorems |
 | `DelegusCheckSpec/Historical.lean` | Phase 3: `Receipt`, `receiptOf`, `Artifacts`, `reverify`, and the historical-clock theorems |
 | `scripts/readme-axioms.py` | Refreshes the axiom audit below from `check-axioms.sh` |
 | `DelegusCheckVectors/Case.lean` | Running the model on a case (not used by any proof) |
@@ -272,6 +288,19 @@ Phase 3 statements (offline re-verification, §6.4 and erratum 2):
 | `wall_clock_breaks` | an ALLOW at time `t`, re-run at any `w ≥ validUntil`, gives `GRANT_EXPIRED` |
 | `evaluated_at_bound` | under explicit signature, signing-policy and encoding hypotheses, a receipt that verifies is one Delegus issued, with its `evaluated_at` |
 
+Phase 4 statements (the hot path's operations, §5.5, §7, erratum 1):
+
+| Theorem | Statement |
+|---|---|
+| `run_eq`, `evaluateM_result`, `trace_eq` | the effectful evaluator, answered from the snapshots, gives exactly `evaluate`'s result, and its recorded trace is `opsOf` |
+| `trace_shape` | the trace is `[]`, `[issuer]`, `[issuer, status]` or `[issuer, status, replay]`: only the three operations, each at most once, in that order |
+| `issuer_read_iff_p1`, `status_read_iff_p3` | the registry is read exactly when P1 passed; the revocation state exactly when P3 passed |
+| `replay_write_iff`, `setnx_only_after_p14` | the replay write happens exactly when P1–P14 all passed |
+| `revoked_never_burns_jti` | P6 not `true` → no replay write |
+| `status_read_before_replay_write` | the revocation read precedes the replay write |
+| `revoked_beats_replayed` | everything before P6 passed and P6 is `AUTHORITY_REVOKED` → that is the reason, whatever the replay store says |
+| `seams_congr` | two service states that answer the operations actually performed the same way give the same result and trace |
+
 Phase 0 statements (the kernel, for any outcomes):
 
 | Theorem | Statement |
@@ -289,6 +318,21 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 `DelegusCheckSpec/`:
 
 ```
+'DelegusCheck.pureEnv_grant' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.run_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.trace_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.evaluateM_result' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.trace_shape' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.issuer_read_iff_p1' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.status_read_iff_p3' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.actionStage_early' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.proofStage_early_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.replay_write_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.setnx_only_after_p14' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoked_never_burns_jti' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.status_read_before_replay_write' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.revoked_beats_replayed' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.seams_congr' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.req_eq_some' depends on axioms: [propext]
 'DelegusCheck.grantPayload_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.parseGrant_ok' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -426,7 +470,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
-OK: 137 theorems, standard axioms only
+OK: 152 theorems, standard axioms only
 ```
 
 `propext`, `Quot.sound` and `Classical.choice` are Lean's three standard
@@ -461,7 +505,11 @@ answer, so `npx delegus-conformance --impl ./bridge/lean-impl.mjs` checks
 the model with the runner's own comparison.
 
 `scripts/differential.mjs` builds the mutants, runs the engine on each and
-the model on all of them in one batch, and compares. A mutant the engine
+the model on all of them in one batch, and compares. It also runs each
+mutant through `@delegus/core`'s `evaluate` with the conformance package's
+in-memory service and compares that service's call log with the model's
+operation trace (with `--engine`, the trace still comes from the pinned
+`@delegus/core`). A mutant the engine
 rejects as invalid service input (it throws by design, for example a Proof
 window outside 1–300 seconds) is counted and skipped: 40 in the current
 run.

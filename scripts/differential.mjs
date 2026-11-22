@@ -5,7 +5,10 @@
 // state, keys, tampered bytes) and run every mutant through both the
 // reference engine and the Lean model. There is no expected value: the two
 // must simply agree on the decision, the reason, both layer results, all 24
-// check outcomes, request_hash and the attributed principal.
+// check outcomes, request_hash, the attributed principal, and the service
+// operations performed (issuer read, revocation read, replay write: which,
+// in which order, with which arguments), taken from the engine's in-memory
+// service call log and the model's recording run of `evaluateM`.
 //
 //   node scripts/differential.mjs [--engine <module>] [--show <n>]
 //
@@ -24,7 +27,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { lower } from "./lowering.mjs";
 import {
   createCompactJws, signEd25519, ed25519PrivateKeyFromSeed, ed25519RawPublicKey, didKeyFromEd25519,
-  canonicalize, sha256Utf8,
+  canonicalize, sha256Utf8, evaluate as coreEvaluate,
 } from "@delegus/core";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -36,6 +39,16 @@ const showIdx = args.indexOf("--show");
 const show = showIdx >= 0 ? Number(args[showIdx + 1]) : 20;
 const mod = await import(engineIdx >= 0 ? pathToFileURL(resolve(args[engineIdx + 1])).href : "@delegus/conformance");
 const engine = mod.coreImplementation;
+
+/** The service operations the engine performed, from the in-memory service's call log. */
+async function engineTrace(input) {
+  if (typeof mod.serviceFromState !== "function" || typeof mod.evaluateInputFromVector !== "function") return null;
+  const svc = mod.serviceFromState(input, Date.parse(input.evaluated_at));
+  await coreEvaluate(mod.evaluateInputFromVector(input, svc));
+  return svc.calls.map((c) => c.hook === "issuer" ? ["issuer", c.args[0]]
+    : c.hook === "statusList" ? ["status", c.args[1]]
+    : ["replay", c.args[0], c.args[1], "PX", c.args[2]]);
+}
 
 const PROTOCOL = Array.from({ length: 20 }, (_, i) => `P${i + 1}`);
 const TRUST = ["T1", "T2", "T3", "T5"];
@@ -189,11 +202,12 @@ try {
         rejected++;
         continue;
       }
+      const trace = await engineTrace(input);
       const id = `${file.vector}~${name}`;
       const fname = `m${String(mutants.length).padStart(5, "0")}.json`;
       writeFileSync(join(dir, "cases", fname), JSON.stringify({ vector: id, input }));
       writeFileSync(join(dir, "lowered", fname), JSON.stringify(lower({ vector: id, input })));
-      mutants.push({ id, e });
+      mutants.push({ id, e, trace });
     }
   }
   const model = new Map();
@@ -204,7 +218,8 @@ try {
   const disagreements = [];
   const decisions = { ALLOW: 0, DENY: 0 };
   const reasons = new Map();
-  for (const { id, e } of mutants) {
+  let traced = 0;
+  for (const { id, e, trace } of mutants) {
     const m = model.get(id);
     decisions[e.decision]++;
     reasons.set(e.reason ?? "null", (reasons.get(e.reason ?? "null") ?? 0) + 1);
@@ -217,6 +232,10 @@ try {
     if (m.request_hash !== rh) diffs.push(`request_hash: lean=${m.request_hash} engine=${rh}`);
     const pr = e.receipt?.principal?.id ?? null;
     if (m.principal !== pr) diffs.push(`principal: lean=${m.principal} engine=${pr}`);
+    if (trace !== null) {
+      traced++;
+      if (!same(m.trace, trace)) diffs.push(`trace: lean=${JSON.stringify(m.trace)} engine=${JSON.stringify(trace)}`);
+    }
     if (diffs.length > 0) disagreements.push(`${id}: ${diffs.join("; ")}`);
   }
   for (const d of disagreements.slice(0, show)) console.log(`DISAGREE ${d}`);
@@ -224,7 +243,8 @@ try {
   const reasonList = [...reasons.entries()].sort((a, b) => b[1] - a[1]).map(([r, c]) => `${r} ${c}`).join(", ");
   console.log(`mutants: ${mutants.length} evaluated (${decisions.ALLOW} ALLOW, ${decisions.DENY} DENY), ${rejected} rejected by the engine as invalid input`);
   console.log(`engine reasons: ${reasonList}`);
-  console.log(`${mutants.length - disagreements.length} of ${mutants.length} mutants agree on decision, reason, both layer results, all 24 checks, request_hash and principal; ${disagreements.length} disagreement(s)`);
+  console.log(`service operations compared on ${traced} mutants (which operations, in which order, with which arguments)`);
+  console.log(`${mutants.length - disagreements.length} of ${mutants.length} mutants agree on decision, reason, both layer results, all 24 checks, request_hash, principal and the operation trace; ${disagreements.length} disagreement(s)`);
   process.exitCode = disagreements.length === 0 ? 0 : 1;
 } finally {
   rmSync(dir, { recursive: true, force: true });

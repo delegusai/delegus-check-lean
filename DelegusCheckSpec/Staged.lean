@@ -65,7 +65,7 @@ theorem stagedRow_eq_tableRow (e : Env) : stagedRow e = tableRow (base e) := by
       · by_cases hs : e.π.sigOk key g.signingInput g.signature = true
         · rcases hp : e.proof with _ | p
           · simp [ok, hs, gate]
-          · simp only [hs, ite_true, ok, Option.isSome_some, proofStage]
+          · simp only [hs, ite_true, ok, Option.isSome_some, proofStage, proofRow, earlyRow, earlyPass]
             by_cases h14 : p14Of e p = .pass
             · rcases ha : e.action with _ | a
               · simp [h14, actionStage, ha, gate]

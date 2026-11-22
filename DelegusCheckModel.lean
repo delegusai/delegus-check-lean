@@ -23,7 +23,7 @@ def main (args : List String) : IO UInt32 := do
   let mut failed := false
   for f in ← caseFiles cases do
     match ← loadFile f lowered with
-    | .ok l => IO.println (resultJson l.id (runLoaded l)).compress
+    | .ok l => IO.println (resultJson l.id (runLoaded l) (traceLoaded l)).compress
     | .error e =>
       IO.eprintln s!"{f}: cannot read case: {e}"
       failed := true

@@ -62,7 +62,7 @@ theorem t1Of_ne_skipped (x : IssuerLookup) : t1Of x ≠ .skipped := by cases x <
 theorem replayOutcome_ne_skipped (x : ReplayAnswer) : replayOutcome x ≠ .skipped := by
   cases x <;> simp [replayOutcome]
 theorem p6Of_ne_skipped (e : Env) (g : GrantF) : p6Of e g ≠ .skipped := by
-  unfold p6Of; split <;> simp; split <;> simp
+  unfold p6Of p6From; split <;> simp; split <;> simp
 
 /-- With every prerequisite `true`, a check's rule always has the data it
     needs: it is `true` or `false`, never skipped. -/
@@ -183,7 +183,7 @@ theorem authorize_codes (caps : List Capability) (a : Action) (r : Reason) :
 /-- Every rule's `false` carries one of its check's codes. -/
 theorem base_codes (e : Env) (k : Check) (r : Reason) (h : base e k = .fail r) : r ∈ codes k := by
   cases k <;> simp only [base] at h <;> (repeat' split at h) <;>
-    simp_all [ok, codes, t1Of, t2Of, t3Of, p2Of, p3Of, p4Of, p5Of, p6Of, p7Of, p9Of, p10Of, p11Of,
+    simp_all [ok, codes, t1Of, t2Of, t3Of, p2Of, p3Of, p4Of, p5Of, p6Of, p6From, p7Of, p9Of, p10Of, p11Of,
       p12Of, p13Of, p14Of, replayOutcome, unusableStatusCode]
   all_goals (try (repeat' split at h) <;> simp_all)
   all_goals first
@@ -428,7 +428,7 @@ theorem tm08_revoked_denies {g : GrantF} {cred : String} (hg : parseGrant π req
     (evaluate π req s tc clk ρ).result.decision = .deny := by
   apply deny_of_base .P6
   simp only [statusOk, beq_eq_false_iff_ne, ne_eq] at hr
-  simp only [base, Env.grant, hg, p6Of, hs]
+  simp only [base, Env.grant, hg, p6Of, p6From, hs]
   split <;> simp_all
 
 /-- TM-09: a `kid` marked compromised is DENY (T3). -/

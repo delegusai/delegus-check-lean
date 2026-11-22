@@ -80,7 +80,7 @@ theorem status_unavailable_denies (h : ∀ u, s.status u = .unavailable) :
     (evaluate π req s tc clk ρ).result.decision = .deny := by
   rcases hg : parseGrant π req.grant with r | g
   · exact deny_of_base .P1 (by simp [base, Env.grant, hg])
-  · exact deny_of_base .P6 (by simp [base, Env.grant, hg, p6Of, h])
+  · exact deny_of_base .P6 (by simp [base, Env.grant, hg, p6Of, p6From, h])
 
 /-- An unavailable replay store is DENY (§5.3; T5). -/
 theorem replay_unavailable_denies (h : ∀ q, ρ q = .unavailable) :
@@ -262,7 +262,7 @@ theorem protocol_local {π : Prims} {req : Request} {clk : Clock} {tc : TrustCon
     simp only [base, Env.grant]
     split
     · rename_i g hg
-      simp only [p6Of, hs g hg h3]
+      simp only [p6Of, p6From, hs g hg h3]
     · rfl
   have bP1 := hb .P1 (by decide) (by decide) (by decide) (by decide)
   have bT1 := hb .T1 (by decide) (by decide) (by decide) (by decide)

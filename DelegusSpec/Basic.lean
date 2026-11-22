@@ -1,0 +1,166 @@
+/-
+Copyright 2026 Inam Haq. Licensed under the Apache License, Version 2.0.
+
+The check names, reason codes and evaluation order below restate the check
+tables of §5.2, §5.3 and §5.4 of the Delegus Specification v0.2.
+Attribution: "Delegus Specification v0.2, © Delegus (delegus.ai)", licensed
+under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+-/
+
+namespace Delegus
+
+/-- The 24 checks of `delegus-base-v1` (P1–P20, §5.2) and `delegus-trust-v1`
+    (T1, T2, T3, T5, §5.3). T4 and T6 do not exist (§5.3). Constructors are
+    declared in the §5.4 evaluation order. -/
+inductive Check
+  | P1 | T1 | T2 | T3 | P2 | P3 | P4 | P5 | P6 | P7 | P8 | P9 | P10
+  | P11 | P12 | P13 | P14 | T5 | P15 | P16 | P17 | P18 | P19 | P20
+  deriving DecidableEq, Repr, Inhabited
+
+/-- §5.4 canonical evaluation order. The two bracketed internal operations
+    (`[read status_ver; refresh cached status credential]` before P6 and
+    `[atomic replay SET NX]` before T5) are not checks and so are not listed;
+    they are modelled in a later phase. -/
+def order : List Check :=
+  [.P1, .T1, .T2, .T3, .P2, .P3, .P4, .P5,
+   /- [read status_ver; refresh cached status credential if needed] -/
+   .P6, .P7, .P8, .P9, .P10, .P11, .P12, .P13, .P14,
+   /- [atomic replay SET NX] -/
+   .T5, .P15, .P16, .P17, .P18, .P19, .P20]
+
+/-- The protocol layer, `delegus-base-v1` (§5.2), in check-number order. -/
+def protocolChecks : List Check :=
+  [.P1, .P2, .P3, .P4, .P5, .P6, .P7, .P8, .P9, .P10,
+   .P11, .P12, .P13, .P14, .P15, .P16, .P17, .P18, .P19, .P20]
+
+/-- The trust layer, `delegus-trust-v1` (§5.3): exactly T1, T2, T3, T5. -/
+def trustChecks : List Check := [.T1, .T2, .T3, .T5]
+
+/-- The wire name of a check, as in receipts (§6.2). -/
+def Check.name : Check → String
+  | .P1 => "P1" | .P2 => "P2" | .P3 => "P3" | .P4 => "P4" | .P5 => "P5"
+  | .P6 => "P6" | .P7 => "P7" | .P8 => "P8" | .P9 => "P9" | .P10 => "P10"
+  | .P11 => "P11" | .P12 => "P12" | .P13 => "P13" | .P14 => "P14"
+  | .P15 => "P15" | .P16 => "P16" | .P17 => "P17" | .P18 => "P18"
+  | .P19 => "P19" | .P20 => "P20"
+  | .T1 => "T1" | .T2 => "T2" | .T3 => "T3" | .T5 => "T5"
+
+/-- The 21 §5.2 reason codes, the 5 §5.3 reason codes, and the reserved
+    `ISSUER_NOT_TRUSTED` (§5.3), which no check ever emits (see
+    `Delegus.codes` and `reason_never_reserved`). -/
+inductive Reason
+  -- §5.2
+  | GRANT_MALFORMED | UNSUPPORTED_FEATURE | ISSUER_KEY_NOT_FOUND
+  | GRANT_SIGNATURE_INVALID | GRANT_NOT_YET_VALID | GRANT_EXPIRED
+  | AUTHORITY_REVOKED | AUDIENCE_MISMATCH | PROOF_MALFORMED
+  | PROOF_SIGNATURE_INVALID | PROOF_AGENT_MISMATCH | PROOF_GRANT_MISMATCH
+  | PROOF_AUDIENCE_MISMATCH | PROOF_EXPIRED | PROOF_ACTION_MISMATCH
+  | ACTION_MALFORMED | ACTION_NOT_AUTHORIZED | UNKNOWN_CONSTRAINT
+  | CURRENCY_NOT_AUTHORIZED | AMOUNT_EXCEEDS_AUTHORITY | RESOURCE_NOT_AUTHORIZED
+  -- §5.3
+  | ISSUER_UNKNOWN | ISSUER_UNVERIFIED | ISSUER_KEY_COMPROMISED
+  | PROOF_REPLAYED | SERVICE_UNAVAILABLE
+  -- §5.3, reserved
+  | ISSUER_NOT_TRUSTED
+  deriving DecidableEq, Repr, Inhabited
+
+def Reason.name : Reason → String
+  | .GRANT_MALFORMED => "GRANT_MALFORMED"
+  | .UNSUPPORTED_FEATURE => "UNSUPPORTED_FEATURE"
+  | .ISSUER_KEY_NOT_FOUND => "ISSUER_KEY_NOT_FOUND"
+  | .GRANT_SIGNATURE_INVALID => "GRANT_SIGNATURE_INVALID"
+  | .GRANT_NOT_YET_VALID => "GRANT_NOT_YET_VALID"
+  | .GRANT_EXPIRED => "GRANT_EXPIRED"
+  | .AUTHORITY_REVOKED => "AUTHORITY_REVOKED"
+  | .AUDIENCE_MISMATCH => "AUDIENCE_MISMATCH"
+  | .PROOF_MALFORMED => "PROOF_MALFORMED"
+  | .PROOF_SIGNATURE_INVALID => "PROOF_SIGNATURE_INVALID"
+  | .PROOF_AGENT_MISMATCH => "PROOF_AGENT_MISMATCH"
+  | .PROOF_GRANT_MISMATCH => "PROOF_GRANT_MISMATCH"
+  | .PROOF_AUDIENCE_MISMATCH => "PROOF_AUDIENCE_MISMATCH"
+  | .PROOF_EXPIRED => "PROOF_EXPIRED"
+  | .PROOF_ACTION_MISMATCH => "PROOF_ACTION_MISMATCH"
+  | .ACTION_MALFORMED => "ACTION_MALFORMED"
+  | .ACTION_NOT_AUTHORIZED => "ACTION_NOT_AUTHORIZED"
+  | .UNKNOWN_CONSTRAINT => "UNKNOWN_CONSTRAINT"
+  | .CURRENCY_NOT_AUTHORIZED => "CURRENCY_NOT_AUTHORIZED"
+  | .AMOUNT_EXCEEDS_AUTHORITY => "AMOUNT_EXCEEDS_AUTHORITY"
+  | .RESOURCE_NOT_AUTHORIZED => "RESOURCE_NOT_AUTHORIZED"
+  | .ISSUER_UNKNOWN => "ISSUER_UNKNOWN"
+  | .ISSUER_UNVERIFIED => "ISSUER_UNVERIFIED"
+  | .ISSUER_KEY_COMPROMISED => "ISSUER_KEY_COMPROMISED"
+  | .PROOF_REPLAYED => "PROOF_REPLAYED"
+  | .SERVICE_UNAVAILABLE => "SERVICE_UNAVAILABLE"
+  | .ISSUER_NOT_TRUSTED => "ISSUER_NOT_TRUSTED"
+
+/-- The DENY reason codes each check may carry when it is `false`.
+
+    Single codes are the §5.2 and §5.3 tables. The two-code rows:
+    * P1: `GRANT_MALFORMED` / `UNSUPPORTED_FEATURE` (§5.2 table).
+    * T5: `PROOF_REPLAYED` / `SERVICE_UNAVAILABLE` (§5.3 table).
+    * P6: `AUTHORITY_REVOKED`, and `SERVICE_UNAVAILABLE` when current
+      revocation state cannot be established (§7, "MUST fail closed
+      (`SERVICE_UNAVAILABLE`)"). §7 names the code but not the check; the
+      model places it at P6, the check that consumes revocation state.
+      This is a reading (README, "Readings").
+    * T1: `ISSUER_UNKNOWN`, and `SERVICE_UNAVAILABLE` when the issuer
+      registry cannot be read. The spec names no code for that case; §0
+      constraint 3 requires DENY. The model follows the engine and places it
+      at T1. This is a reading (README, "Readings"). -/
+def codes : Check → List Reason
+  | .P1 => [.GRANT_MALFORMED, .UNSUPPORTED_FEATURE]
+  | .P2 => [.ISSUER_KEY_NOT_FOUND]
+  | .P3 => [.GRANT_SIGNATURE_INVALID]
+  | .P4 => [.GRANT_NOT_YET_VALID]
+  | .P5 => [.GRANT_EXPIRED]
+  | .P6 => [.AUTHORITY_REVOKED, .SERVICE_UNAVAILABLE]
+  | .P7 => [.AUDIENCE_MISMATCH]
+  | .P8 => [.PROOF_MALFORMED]
+  | .P9 => [.PROOF_SIGNATURE_INVALID]
+  | .P10 => [.PROOF_AGENT_MISMATCH]
+  | .P11 => [.PROOF_GRANT_MISMATCH]
+  | .P12 => [.PROOF_AUDIENCE_MISMATCH]
+  | .P13 => [.PROOF_EXPIRED]
+  | .P14 => [.PROOF_ACTION_MISMATCH]
+  | .P15 => [.ACTION_MALFORMED]
+  | .P16 => [.ACTION_NOT_AUTHORIZED]
+  | .P17 => [.UNKNOWN_CONSTRAINT]
+  | .P18 => [.CURRENCY_NOT_AUTHORIZED]
+  | .P19 => [.AMOUNT_EXCEEDS_AUTHORITY]
+  | .P20 => [.RESOURCE_NOT_AUTHORIZED]
+  | .T1 => [.ISSUER_UNKNOWN, .SERVICE_UNAVAILABLE]
+  | .T2 => [.ISSUER_UNVERIFIED]
+  | .T3 => [.ISSUER_KEY_COMPROMISED]
+  | .T5 => [.PROOF_REPLAYED, .SERVICE_UNAVAILABLE]
+
+/-- A check outcome, §5.2: `true | false | "skipped"`. A `false` carries the
+    reason code it reports. -/
+inductive Outcome
+  | pass
+  | fail (r : Reason)
+  | skipped
+  deriving DecidableEq, Repr, Inhabited
+
+def Outcome.isFail : Outcome → Bool
+  | .fail _ => true
+  | _ => false
+
+def Outcome.isPass : Outcome → Bool
+  | .pass => true
+  | _ => false
+
+/-- The reason a failed outcome carries, if any. -/
+def Outcome.failReason : Outcome → Option Reason
+  | .fail r => some r
+  | _ => none
+
+/-- The 24 outcomes of one evaluation. -/
+structure Checks where
+  get : Check → Outcome
+
+inductive Decision
+  | allow
+  | deny
+  deriving DecidableEq, Repr, Inhabited
+
+end Delegus

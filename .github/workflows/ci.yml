@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # lake build, then lake test (the 40 cases through the kernel)
+      - uses: leanprover/lean-action@v1
+        with:
+          test: true
+      - name: Axiom audit
+        run: ./scripts/check-axioms.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Model versus reference engine, 40 cases
+        run: node scripts/compare.mjs

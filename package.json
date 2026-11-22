@@ -1,0 +1,14 @@
+{
+  "name": "delegus-lean-bridge",
+  "private": true,
+  "description": "Compares the Lean model's output with the reference engine on the conformance cases.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "compare": "node scripts/compare.mjs"
+  },
+  "devDependencies": {
+    "@delegus/conformance": "0.4.0"
+  }
+}

@@ -17,10 +17,10 @@ gen=.lake/axioms-check.lean
 mkdir -p .lake
 {
   echo "import DelegusCheckSpec"
-  grep -hoE '^theorem [A-Za-z0-9_.]+' DelegusCheckSpec/*.lean | awk '{print "#print axioms DelegusCheck." $2}'
+  grep -hoE '^(@\[simp\] )?theorem [A-Za-z0-9_.]+' DelegusCheckSpec/*.lean | awk '{print "#print axioms DelegusCheck." $NF}'
 } > "$gen"
 count=$(grep -c '^#print' "$gen")
-out=$(lake env lean "$gen")
+out=$(lake env lean "$gen" 2>&1) || { echo "$out"; echo "FAIL: the axiom report did not compile"; exit 1; }
 echo "$out"
 
 lines=$(printf '%s\n' "$out" | grep -c "^'DelegusCheck\." || true)

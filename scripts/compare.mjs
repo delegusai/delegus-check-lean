@@ -6,10 +6,13 @@
 //
 // 1. Checks that vectors/cases/ is byte-identical to the cases shipped in the
 //    pinned @delegus/conformance package.
-// 2. Runs the Lean executable (.lake/build/bin/delegus-check-model) on vectors/cases/.
+// 2. Checks that vectors/lowered/ is what scripts/lower.mjs produces, then runs
+//    the Lean model (.lake/build/bin/delegus-check-model) on the cases and
+//    their lowered primitive facts. The model computes every check itself.
 // 3. Runs the reference engine (@delegus/core, through the package's
 //    `coreImplementation`) live on each case's input.
-// 4. Compares decision, reason, both layer results and all 24 check outcomes.
+// 4. Compares decision, reason, both layer results, all 24 check outcomes,
+//    request_hash and the attributed principal.
 //
 // `--engine <module>` loads `coreImplementation` from another module instead,
 // for example a local checkout's packages/conformance/src/index.ts.
@@ -49,10 +52,15 @@ for (const n of names) {
   if (!readFileSync(join(casesDir, n)).equals(readFileSync(join(pkgCases, n)))) fail(`${n} differs from @delegus/conformance@${pkgVersion}`);
 }
 
-// 2. The Lean model.
+// 2. The lowered facts are current, and the Lean model.
+try {
+  execFileSync(process.execPath, [join(root, "scripts", "lower.mjs"), "--check"], { stdio: "inherit" });
+} catch {
+  fail("vectors/lowered/ is out of date");
+}
 const exe = join(root, ".lake", "build", "bin", "delegus-check-model");
 const lean = new Map();
-for (const line of execFileSync(exe, [casesDir], { encoding: "utf8" }).split("\n")) {
+for (const line of execFileSync(exe, [casesDir, join(root, "vectors", "lowered")], { encoding: "utf8" }).split("\n")) {
   if (line.trim() === "") continue;
   const r = JSON.parse(line);
   lean.set(r.vector, r);
@@ -80,6 +88,10 @@ for (const n of names) {
   for (const k of TRUST) {
     if (!same(m.trust_checks[k], e.trust_checks[k])) diffs.push(`${k}: lean=${JSON.stringify(m.trust_checks[k])} engine=${JSON.stringify(e.trust_checks[k])}`);
   }
+  const rh = e.receipt?.request_hash ?? null;
+  if (m.request_hash !== rh) diffs.push(`request_hash: lean=${m.request_hash} engine=${rh}`);
+  const pr = e.receipt?.principal?.id ?? null;
+  if (m.principal !== pr) diffs.push(`principal: lean=${m.principal} engine=${pr}`);
   if (Object.keys(e.protocol_checks).length !== 20 || Object.keys(e.trust_checks).length !== 4) diffs.push("engine did not report exactly 20 + 4 checks");
   if (!m.prerequisite_table_followed) diffs.push("lean: outcomes do not follow the prerequisite table");
   if (!m.reason_codes_well_formed) diffs.push("lean: a false check carries a code its check cannot carry");
@@ -93,5 +105,5 @@ for (const n of names) {
 if (names.length !== 40) fail(`expected 40 cases, found ${names.length}`);
 
 console.log(`\nengine: ${engineIdx >= 0 ? engineModule : `@delegus/conformance@${pkgVersion}`} (coreImplementation)`);
-console.log(`${matched} of ${names.length} cases match on decision, reason, both layer results and all 24 checks; ${failures} mismatch(es)`);
+console.log(`${matched} of ${names.length} cases match on decision, reason, both layer results, all 24 checks, request_hash and principal; ${failures} mismatch(es)`);
 process.exit(failures === 0 ? 0 : 1);

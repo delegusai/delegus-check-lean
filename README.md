@@ -273,6 +273,15 @@ Everything below passed. Run it yourself with:
 ./scripts/check-in-linux.sh                                   # the two sandboxed judges; needs Docker
 ```
 
+Both scripts fail closed. They stop with exit 2, before checking anything,
+if `lake`, the Lean version in `lean-toolchain`, or any checker is missing.
+A step passes only when the tool exits 0 and prints its own success
+message; the export must be non-empty, the same on a second run and equal
+to the expected hash recorded in the script; the comparison must justify
+exactly the theorems listed in `comparator.json` and accept a non-zero
+number of declarations. Any failed step makes the script exit 1, with a
+`FAIL` line naming it.
+
 **1. The statements.** `DelegusCheckChallenge/` is the statements-only
 version: the model's definitions exactly as written, module for module, and
 every one of the 197 public theorems with its proof replaced by `sorry`. It

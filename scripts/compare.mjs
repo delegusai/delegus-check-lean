@@ -116,7 +116,7 @@ for (const n of names) {
     fail(`${id}: ${diffs.join("; ")}`);
   }
 }
-if (names.length !== 51) fail(`expected 51 cases, found ${names.length}`);
+if (names.length !== 52) fail(`expected 52 cases, found ${names.length}`);
 
 console.log(`\nengine: ${engineIdx >= 0 ? engineModule : `@delegus/conformance@${pkgVersion}`} (coreImplementation)`);
 console.log(`${matched} of ${names.length} cases match on decision, reason, both layer results, all 24 checks, request_hash and principal; ${failures} mismatch(es)`);

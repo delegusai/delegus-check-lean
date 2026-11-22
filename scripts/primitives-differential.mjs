@@ -119,6 +119,16 @@ const jcsAgain = runLines("--jcs", jcsOut);
 jcsOut.forEach((t, i) => { if (jcsAgain[i] !== t) show(`jcs not idempotent: ${t} -> ${jcsAgain[i]}`); });
 console.log(`properties: normalizeHtu idempotent on ${htuOut.length} outputs, jcs idempotent on ${jcsOut.length} outputs`);
 
+// Erratum 7: inputs whose host carries '%' (found the way the engine finds it).
+const hostOf = (u) => {
+  const m = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#]*)/.exec(u);
+  if (!m) return null;
+  const a = m[1];
+  return a.startsWith("[") ? a.slice(0, a.indexOf("]") + 1) : a.split(":")[0];
+};
+const percentHosts = htuInputs.filter((u) => (hostOf(u) ?? "").includes("%"));
+const percentAccepted = percentHosts.filter((u, i) => leanHtu[htuInputs.indexOf(u)] !== null).length;
+console.log(`erratum 7: ${percentHosts.length} generated URIs have '%' in the host; the model accepts ${percentAccepted} of them`);
 console.log(`htu: ${htuInputs.length} inputs (${htuCanonical} valid URIs); jcs: ${jcsInputs.length} JSON values (${jcsOk} canonicalizable)`);
 console.log(`${htuInputs.length + jcsInputs.length - failures} of ${htuInputs.length + jcsInputs.length} agree with @delegus/core; ${failures} disagreement(s)`);
 process.exitCode = failures === 0 ? 0 : 1;

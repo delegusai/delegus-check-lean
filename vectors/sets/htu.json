@@ -91,6 +91,10 @@
     "https://rp.example/a%zz",
     "https://rp.example/a b",
     "https://rp.example/a<b>",
-    " https://rp.example/x"
+    " https://rp.example/x",
+    "https://a%2Fb/x%2fy",
+    "https://rp%2Eexample/orders",
+    "https://RP%2eEXAMPLE:8443/x",
+    "https://[fe80::1%25eth0]/x"
   ]
 }

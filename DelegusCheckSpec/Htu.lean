@@ -90,9 +90,16 @@ def splitScheme (cs : List Char) : Option (List Char × List Char) :=
     | [] => none
   | _ => none
 
-/-- §4.3 canonical form of an `htu` value, or `none` when it is not a valid
-    http(s) URI. -/
-def normalizeHtu (input : String) : Option String := do
+/-- The parts of an `htu` before the authority is examined. -/
+structure HtuParts where
+  scheme : List Char
+  defaultPort : Nat
+  authority : List Char
+  path : List Char
+
+/-- Scheme, default port, authority and path; the fragment and query
+    removed, after checking they are well formed. -/
+def splitHtu (input : String) : Option HtuParts := do
   let cs := input.toList
   if cs.isEmpty then none
   if !cs.all (fun c => '!' ≤ c && c ≤ '~') then none
@@ -110,6 +117,26 @@ def normalizeHtu (input : String) : Option String := do
     | some p => '/' :: p
     | none => []
   if authority.isEmpty || authority.contains '@' then none
+  some { scheme, defaultPort, authority, path }
+
+/-- The host as written in the authority: an IP literal up to and including
+    its `]`, otherwise everything before the first `:`. -/
+def hostRaw (authority : List Char) : List Char :=
+  match authority with
+  | '[' :: _ =>
+    match splitFirst ']' authority with
+    | (inside, some _) => inside ++ [']']
+    | (_, none) => []
+  | _ => (splitFirst ':' authority).1
+
+/-- §4.3 canonical form of an `htu` value, or `none` when it is not a valid
+    http(s) URI. **Erratum 7:** a host containing `%` (an escaped DNS name,
+    or an IPv6 zone identifier) has no canonical form: refused, not
+    normalised. -/
+def normalizeHtu (input : String) : Option String := do
+  let parts ← splitHtu input
+  if (hostRaw parts.authority).contains '%' then none
+  let authority := parts.authority
   let (host, port) ← match authority with
     | '[' :: _ =>
       let (inside, after) := splitFirst ']' authority
@@ -135,9 +162,24 @@ def normalizeHtu (input : String) : Option String := do
       else
         let v := digitsValue p
         if v > 65535 then none
-        else if v == defaultPort then some [] else some (':' :: natDigits v)
-  let path' ← normalizePercent (fun c => isPChar c || c == '/') path
-  some (String.ofList (scheme ++ "://".toList ++ host ++ portSuffix ++ path'))
+        else if v == parts.defaultPort then some [] else some (':' :: natDigits v)
+  let path' ← normalizePercent (fun c => isPChar c || c == '/') parts.path
+  some (String.ofList (parts.scheme ++ "://".toList ++ host ++ portSuffix ++ path'))
+
+/-- **Erratum 7, proven:** an `htu` with a canonical form has no `%` in its
+    host. -/
+theorem normalizeHtu_host_no_percent {s t : String} (h : normalizeHtu s = some t) :
+    ∃ p, splitHtu s = some p ∧ (hostRaw p.authority).contains '%' = false := by
+  unfold normalizeHtu at h
+  cases hs : splitHtu s with
+  | none => simp [hs] at h
+  | some p =>
+    refine ⟨p, rfl, ?_⟩
+    simp only [hs] at h
+    cases hc : (hostRaw p.authority).contains '%'
+    · rfl
+    · have hm : '%' ∈ hostRaw p.authority := by simpa using hc
+      simp [hm] at h
 
 /-- The `htu` is already in canonical form. -/
 def isCanonicalHtu (s : String) : Bool := normalizeHtu s == some s

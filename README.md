@@ -10,7 +10,7 @@ a precise model in Lean 4, a tool that checks mathematical proofs by
 machine, and proves properties of them that hold for every possible input,
 not only the cases we happened to test.
 
-Phases 0 to 6 of the plan are done, with errata 5 and 6 applied. Phase 0 proved the order of the checks, the yes-or-no answer and the reason given for a no. Phase 1 writes every one of
+Phases 0 to 6 of the plan are done, with errata 5, 6 and 7 applied. Phase 0 proved the order of the checks, the yes-or-no answer and the reason given for a no. Phase 1 writes every one of
 the 24 checks as a real rule, field by field, and proves what the
 specification promises about the whole decision. Phase 2 ties the model to
 the real engine: the published conformance runner runs the model as an
@@ -56,7 +56,8 @@ state of the service, and every possible answer from the cryptography:
    validity window, which is at most 90 days; some permission in the Grant
    names the action, satisfies every condition and matches the resource;
    every number in the Action is a whole number; the Proof's `jti` has the
-   required format; and the receipt never names a Principal or Agent unless
+   required format; the Proof's target URL is already in canonical form,
+   with no escape in its host (erratum 7); and the receipt never names a Principal or Agent unless
    the Grant's signature checked out.
 8. **An old decision re-checks the same.** Anyone holding a receipt and the
    documents it names by fingerprint can re-run the open part of the
@@ -124,47 +125,47 @@ foundations; the full audit is under [Axiom audit](#axiom-audit).
   its stated expiry. It does not prove that the hosted Redis does, or that
   its clock check runs atomically with the write, as erratum 5 requires.
 - **That the real engine equals the model.** The engine is TypeScript. The
-  two are tied together by running the 51 published test cases, and over
+  two are tied together by running the 52 published test cases, and over
   nine thousand altered versions of them, through both and failing if they
   differ in any way. That is strong testing, not a proof that the code
   equals the model.
 
-## The 51 published test cases
+## The 52 published test cases
 
-The 51 conformance cases of `@delegus/conformance` 0.6.0 (vector-set hash
-`sha256:0f5e019b3679beb0cc1ab30eab065b6903231079be812c84e331c169fe0e2562`:
+The 52 conformance cases of `@delegus/conformance` 0.7.0 (vector-set hash
+`sha256:e4ed80177c231a7b36e37d0690879a11715c3f11ce647a35d0e9daf33e023ce7`:
 ALLOW cases, one DENY case for every reason code, cases that pin
-particular readings, and the cases errata 5 and 6 added, including
+particular readings, and the cases errata 5, 6 and 7 added, including
 repeated uses of one Proof through one replay store) run through both the model and the reference engine. The model
 computes every check itself, from the case's inputs and a small set of
 cryptographic and decoding facts. On every case the two agree:
 
 ```
-51 of 51 cases match on decision, reason, both layer results, all 24 checks, request_hash and principal; 0 mismatch(es)
+52 of 52 cases match on decision, reason, both layer results, all 24 checks, request_hash and principal; 0 mismatch(es)
 ```
 
-The same 51 cases run inside `lake test`, against each case's expected
+The same 52 cases run inside `lake test`, against each case's expected
 result:
 
 ```
-51 of 51 cases match on decision, reason, both layers and all 24 checks; 0 failure(s)
+52 of 52 cases match on decision, reason, both layers and all 24 checks; 0 failure(s)
 ```
 
 The published conformance runner, with the model plugged in as the
 implementation under test:
 
 ```
-PASS: 51/51 vectors (0 receipts byte-identical), 3 sets passed, 0 skipped, 51/51 committed receipts re-verify offline
+PASS: 52/52 vectors (0 receipts byte-identical), 3 sets passed, 0 skipped, 52/52 committed receipts re-verify offline
 ```
 
 (The model signs no receipts, so none are compared. The three sets are
 the `htu`, JCS and `jti` sets, run on the model's own rules; `lake test`
-runs them too: `sets: 51 of 51 htu, JCS and jti checks pass on the model's
+runs them too: `sets: 55 of 55 htu, JCS and jti checks pass on the model's
 own rules`.)
 
 ## Altered cases
 
-Fifty-one cases are fifty-one points. The mutation differential changes each case
+Fifty-two cases are fifty-two points. The mutation differential changes each case
 in about a hundred small ways (the clock, the Proof window, the relying
 party, every Action field, the service state, the trusted keys, tampered
 bytes, and Proofs re-signed with the cases' published test keys so a
@@ -175,7 +176,7 @@ through both the model and the engine. There is no expected answer; the
 two must simply agree:
 
 ```
-9359 of 9359 mutants agree on decision, reason, both layer results, all 24 checks, request_hash, principal and the operation trace; 0 disagreement(s)
+9546 of 9546 mutants agree on decision, reason, both layer results, all 24 checks, request_hash, principal and the operation trace; 0 disagreement(s)
 ```
 
 The operation trace is the list of service operations each side performed
@@ -195,7 +196,9 @@ characters and keys that sort differently by UTF-16):
 40105 of 40105 agree with @delegus/core; 0 disagreement(s)
 ```
 
-That run covers 20,000 URIs (14,100 valid) and 20,105 JSON values. It also
+That run covers 20,000 URIs (6,955 valid; 7,370 of the others have a `%`
+in the host, which erratum 7 refuses, and the model and the engine refuse
+every one of them) and 20,105 JSON values. It also
 checks, without proving it, that both functions are idempotent on their own
 output.
 
@@ -208,16 +211,16 @@ manager) and, for the engine comparison, Node.js 22 or later.
 git clone https://github.com/delegusai/delegus-check-lean.git
 cd delegus-check-lean
 lake build                      # the model, the proofs and the case runner
-lake test                       # the 51 cases through the model, against each case's expected result
+lake test                       # the 52 cases through the model, against each case's expected result
 ./scripts/check-axioms.sh       # what every theorem rests on
 npm ci --ignore-scripts         # the lowering's primitives: @delegus/core, via @delegus/conformance
 node scripts/compare.mjs        # model and engine, case by case
 npx --no-install delegus-conformance --impl ./bridge/lean-impl.mjs   # the published runner, with the model plugged in
-node scripts/differential.mjs   # model and engine on about 9,400 altered cases
+node scripts/differential.mjs   # model and engine on about 9,500 altered cases
 node scripts/primitives-differential.mjs   # the model's htu and JCS against the engine's
 ```
 
-The cases are those of `@delegus/conformance` 0.6.0. Until that release
+The cases are those of `@delegus/conformance` 0.7.0. Until that release
 is on npm (the pinned npm release is 0.4.0, with 40 cases), run the engine
 commands against a source checkout of the engine with
 `scripts/engine-hook.mjs`:
@@ -231,7 +234,7 @@ node --import ./scripts/engine-hook.mjs scripts/primitives-differential.mjs
 ```
 
 The results above were produced that way, against the engine at the
-commit that applies errata 5 and 6.
+commit that applies errata 5, 6 and 7.
 
 `lake build` fails if any proof is wrong. Every other command exits
 non-zero on any mismatch. `compare.mjs` also fails
@@ -276,11 +279,11 @@ To print the model's answer for each case, one JSON object per line:
 | `scripts/differential.mjs` | The mutation differential |
 | `scripts/primitives-differential.mjs` | The model's `htu` and JCS against the engine's, on generated inputs |
 | `DelegusCheckSpec/Htu.lean`, `DelegusCheckSpec/Jcs.lean` | Phase 6: the §4.3 `htu` canonical form and RFC 8785 JCS, in Lean |
-| `vectors/sets/` | The `htu`, JCS and `jti` sets, byte for byte from `@delegus/conformance` 0.6.0 |
+| `vectors/sets/` | The `htu`, JCS and `jti` sets, byte for byte from `@delegus/conformance` 0.7.0 |
 | `.github/workflows/ci.yml` | CI on push and nightly against the latest `@delegus/conformance`; off until the repository variable `CI_ENABLED` is `true` |
-| `scripts/compare.mjs` | Model against the reference engine, live, on all 51 cases |
+| `scripts/compare.mjs` | Model against the reference engine, live, on all 52 cases |
 | `scripts/check-axioms.sh` | `#print axioms` for every theorem, failing on anything but the standard three |
-| `vectors/cases/` | The 51 cases, byte for byte from `@delegus/conformance` 0.6.0 |
+| `vectors/cases/` | The 52 cases, byte for byte from `@delegus/conformance` 0.7.0 |
 | `vectors/lowered/` | Their primitive facts, generated by `scripts/lower.mjs` |
 
 No Mathlib, no other dependency: the model uses only Lean's core library,
@@ -354,6 +357,7 @@ All in namespace `DelegusCheck`. Main Phase 1 statements (`r` is
 | `key_rotation` | T3 fails exactly for a compromised `kid`; a retired key passes (§11) |
 | `isJti_iff`, `p8_jti` | the `jti` format, and P8 `true` → the Proof's `jti` has it |
 | `isCanonicalHtu_iff`, `p8_htu` | canonical means a fixed point of the model's `normalizeHtu`, and P8 `true` → the Proof's `htu` is one |
+| `normalizeHtu_host_no_percent`, `p8_htu_host` | erratum 7: an `htu` with a canonical form has no `%` in its host, so P8 `true` → the Proof's `htu` host has none |
 | `tm05_…` to `tm13_…` | the §13.1 rows TM-05, TM-07, TM-08, TM-09, TM-11, TM-12, TM-13 as DENY statements |
 | `tm01_grant_signed`, `tm03_proof_signed_by_agent`, `tm06_action_bound` | TM-01/02, TM-03 and TM-06 under the explicit hypotheses that a verifying signature under a safe key means its holder signed, and that SHA-256 is injective and JCS canonical |
 
@@ -468,6 +472,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.reverify_reproduces' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.wall_clock_breaks' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.evaluated_at_bound' depends on axioms: [propext, Quot.sound]
+'DelegusCheck.normalizeHtu_host_no_percent' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.staged_get' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.not_pass_of_base' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.base_of_pass' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -540,6 +545,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.isCanonicalHtu_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.parseProof_htu' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.p8_htu' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.p8_htu_host' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm05_other_rp_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm06_action_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm07_outside_window_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -631,7 +637,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
-OK: 192 theorems, standard axioms only
+OK: 194 theorems, standard axioms only
 ```
 
 `propext`, `Quot.sound` and `Classical.choice` are Lean's three standard
@@ -687,10 +693,10 @@ every job runs only when the repository variable `CI_ENABLED` is `true`.
 
 ### Source of the cases
 
-`vectors/cases/` holds the 51 `delegus-base-v1` cases of
+`vectors/cases/` holds the 52 `delegus-base-v1` cases of
 [`@delegus/conformance`](https://www.npmjs.com/package/@delegus/conformance)
-version 0.6.0 (vector-set hash
-`sha256:0f5e019b3679beb0cc1ab30eab065b6903231079be812c84e331c169fe0e2562`),
+version 0.7.0 (vector-set hash
+`sha256:e4ed80177c231a7b36e37d0690879a11715c3f11ce647a35d0e9daf33e023ce7`),
 byte for byte; `scripts/compare.mjs` fails if they differ from the
 engine's own set. They use
 test keys and non-production identifiers only (`did:web:acme.example`,
@@ -729,10 +735,12 @@ points below changes or extends the protocol.
   alphabet with no padding, which is what the engine and the model accept.
 
 **Applied errata found by this model.** Erratum 5 (the replay key could
-expire at the last instant P13 accepts) and erratum 6 (an unusable status
-credential was reported as a revocation) both came out of this work. In
-the model, erratum 5 is `replayQuery` and the store's clock check in
-`setNX`; erratum 6 is `unusableStatusCode`.
+expire at the last instant P13 accepts), erratum 6 (an unusable status
+credential was reported as a revocation) and erratum 7 (an escaped `htu`
+host had two canonical forms) all came out of this work. In the model,
+erratum 5 is `replayQuery` and the store's clock check in `setNX`;
+erratum 6 is `unusableStatusCode`; erratum 7 is the host check in
+`normalizeHtu`, with `normalizeHtu_host_no_percent`.
 
 **Found while proving the historical clock (Phase 3).** Offline
 re-verification (§6.4) is described as needing the receipt, the Delegus
@@ -744,15 +752,6 @@ default 60). A receipt for an RP with a non-default window cannot be fully
 re-verified from the receipt and its artifacts alone. This is a gap in the
 text, not a change; recording the window in the receipt would be a v0.3 or
 erratum question for the owner.
-
-**Found while writing `htu` in Lean (Phase 6).** §4.3 says percent-escapes
-are normalized with uppercase hex. The engine lowercases the whole host
-after normalizing it, so an escape in the host comes out lowercase
-(`https://a%2Fb/` becomes `https://a%2fb/`), while escapes in the path are
-uppercase. The model follows the engine, so a Proof's `htu` with an escaped
-host must use lowercase hex to be canonical. No published case has an
-escaped host. This is a reading for the owner: either the text or the
-engine is off.
 
 **Engine readings the specification leaves open**:
 

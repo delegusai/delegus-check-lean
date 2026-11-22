@@ -11,7 +11,7 @@ import DelegusCheckVectors
 open Lean (Json)
 open DelegusCheck DelegusCheck.Vectors
 
-def expectedCount : Nat := 51
+def expectedCount : Nat := 52
 
 /-- The three normalization sets, run on the model's own `normalizeHtu`,
     `jcs` and `isJti`. Returns the number of failures. -/

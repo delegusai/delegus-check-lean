@@ -407,6 +407,14 @@ theorem p8_htu (h : (evaluate π req s tc clk ρ).result.checks.get .P8 = .pass)
   obtain ⟨p, hp⟩ := proof_of_p8 h
   exact ⟨p, hp, (isCanonicalHtu_iff _).mp (parseProof_htu hp)⟩
 
+/-- **Erratum 7:** P8 passes only for a Proof whose `htu` host has no `%`. -/
+theorem p8_htu_host (h : (evaluate π req s tc clk ρ).result.checks.get .P8 = .pass) :
+    ∃ p parts, parseProof π req.proof = some p ∧ splitHtu p.htu = some parts ∧
+      (hostRaw parts.authority).contains '%' = false := by
+  obtain ⟨p, hp, hn⟩ := p8_htu h
+  obtain ⟨parts, hs, hc⟩ := normalizeHtu_host_no_percent hn
+  exact ⟨p, parts, hp, hs, hc⟩
+
 /-! ## Threat model rows (§13.1) -/
 
 /-- TM-05: a Proof addressed to another RP is DENY (P12). -/

@@ -17,3 +17,5 @@ import DelegusCheckSpec.Phase1Rows
 import DelegusCheckSpec.Historical
 import DelegusCheckSpec.Effects
 import DelegusCheckSpec.Revocation
+import DelegusCheckSpec.Htu
+import DelegusCheckSpec.Jcs

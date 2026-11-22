@@ -1,0 +1,96 @@
+{
+  "description": "htu canonical form per spec §4.3 (RFC 9449 §4.3 + RFC 3986 §6.2.2). `canonical` is the value a conforming Proof must carry; `malformed` inputs have no canonical form (PROOF_MALFORMED).",
+  "normalize": [
+    {
+      "input": "https://rp.example/orders",
+      "canonical": "https://rp.example/orders"
+    },
+    {
+      "input": "HTTPS://RP.Example/orders",
+      "canonical": "https://rp.example/orders"
+    },
+    {
+      "input": "https://rp.example:443/orders",
+      "canonical": "https://rp.example/orders"
+    },
+    {
+      "input": "http://rp.example:80/orders",
+      "canonical": "http://rp.example/orders"
+    },
+    {
+      "input": "https://rp.example:8443/orders",
+      "canonical": "https://rp.example:8443/orders"
+    },
+    {
+      "input": "http://rp.example:443/orders",
+      "canonical": "http://rp.example:443/orders"
+    },
+    {
+      "input": "https://rp.example/orders?x=1",
+      "canonical": "https://rp.example/orders"
+    },
+    {
+      "input": "https://rp.example/orders#frag",
+      "canonical": "https://rp.example/orders"
+    },
+    {
+      "input": "https://rp.example/a%2fb",
+      "canonical": "https://rp.example/a%2Fb"
+    },
+    {
+      "input": "https://rp.example/%7Euser",
+      "canonical": "https://rp.example/~user"
+    },
+    {
+      "input": "https://rp.example/%41%2D%5f%2e",
+      "canonical": "https://rp.example/A-_."
+    },
+    {
+      "input": "https://rp.example/caf%c3%a9",
+      "canonical": "https://rp.example/caf%C3%A9"
+    },
+    {
+      "input": "https://rp.example/a%20b",
+      "canonical": "https://rp.example/a%20b"
+    },
+    {
+      "input": "https://rp.example/orders/",
+      "canonical": "https://rp.example/orders/"
+    },
+    {
+      "input": "https://rp.example",
+      "canonical": "https://rp.example"
+    },
+    {
+      "input": "https://rp.example/",
+      "canonical": "https://rp.example/"
+    },
+    {
+      "input": "https://rp.example/Orders",
+      "canonical": "https://rp.example/Orders"
+    },
+    {
+      "input": "https://rp.example/a/./b/../c",
+      "canonical": "https://rp.example/a/./b/../c"
+    },
+    {
+      "input": "https://[2001:DB8::1]:8443/x",
+      "canonical": "https://[2001:db8::1]:8443/x"
+    }
+  ],
+  "malformed": [
+    "",
+    "rp.example/orders",
+    "/orders",
+    "ftp://rp.example/x",
+    "https://",
+    "https://user@rp.example/x",
+    "https://rp.example:/x",
+    "https://rp.example:99999/x",
+    "https://rp.example/a%2",
+    "https://rp.example/a%zz",
+    "https://rp.example/a b",
+    "https://rp.example/a<b>",
+    " https://rp.example/x"
+  ]
+}

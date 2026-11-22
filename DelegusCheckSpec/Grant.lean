@@ -7,6 +7,7 @@ Attribution for restated spec text: "Delegus Specification v0.2, © Delegus
 (delegus.ai)", CC BY 4.0.
 -/
 import DelegusCheckSpec.Readings
+import DelegusCheckSpec.Htu
 
 namespace DelegusCheck
 
@@ -142,7 +143,7 @@ def grantPayload (π : Prims) (j : Jws) : Option GrantF := do
   let idx ← fieldStr? st "statusListIndex"
   req (isDecimal idx && decide ((decimalValue idx : Int) ≤ maxSafe))
   let url ← fieldStr? st "statusListCredential"
-  req (π.htuCanon url && url.startsWith "https://")
+  req (isCanonicalHtu url && url.startsWith "https://")
   req (match field? st "id" with | none => true | some v => (str? v).isSome)
   -- registered claims (rows 16–20)
   req (fieldIs p "iss" issuer)
@@ -208,7 +209,7 @@ def parseProof (π : Prims) (proof : String) : Option ProofF := do
   let htm ← fieldStr? p "htm"
   req (isHttpMethod htm)
   let htu ← fieldStr? p "htu"
-  req (π.htuCanon htu)
+  req (isCanonicalHtu htu)
   let actionHash ← fieldStr? p "action_hash"
   req (isSha256Ref actionHash)
   some { iss, agentKey, aud, grant, jti, iat, htm, htu, actionHash,

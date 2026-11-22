@@ -169,7 +169,9 @@ inductive ReplayAnswer
 
 /-! ## Primitives (plan §1.6)
 
-Cryptography, hashing, canonical JSON and decoding are parameters. Every theorem
+Cryptography, hashing and decoding are parameters. (Since Phase 6 the `htu`
+canonical form and RFC 8785 JCS are written in Lean: `Htu.lean`,
+`Jcs.lean`.) Every theorem
 quantifies over every `Prims`; assumptions about them (unforgeable
 signatures, collision-free hashing) are hypotheses on the theorems that use
 them, never `axiom`s. -/
@@ -202,10 +204,6 @@ structure Prims where
   sigOk : PubKey → String → String → Bool
   /-- `sha256:<64 lowercase hex>` of the UTF-8 bytes (§6.3). -/
   sha256 : String → String
-  /-- RFC 8785 JCS text; `none` if the value cannot be canonicalized. -/
-  jcs : Json → Option String
-  /-- `htu` is already in the §4.3 canonical form. -/
-  htuCanon : String → Bool
   /-- RFC 3339 UTC → milliseconds since the epoch. -/
   rfc3339 : String → Option Int
   /-- Bitstring Status List `encodedList` (after the multibase `u`):

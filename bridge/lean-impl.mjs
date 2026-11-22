@@ -9,10 +9,10 @@
 // (scripts/lowering.mjs), runs the Lean executable
 // (.lake/build/bin/delegus-check-model) on it and returns the model's
 // decision, reason, layer results and 24 check outcomes. The model never
-// sees the case's expected values. `isJti` is the model's own §4.2 rule.
-// The htu and JCS sets are not supplied: in the model those are primitives
-// (`Prims.htuCanon`, `Prims.jcs`), so the runner reports them as skipped.
-// No receipt is returned, so receipts are not compared.
+// sees the case's expected values. `isJti`, `normalizeHtu` and
+// `canonicalize` are the model's own rules (Syntax.lean, Htu.lean,
+// Jcs.lean); `sha256` is a primitive of the model, supplied here from
+// @delegus/core. No receipt is returned, so receipts are not compared.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -20,9 +20,16 @@ import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lower } from "../scripts/lowering.mjs";
+import { sha256Utf8 } from "@delegus/core";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const exe = join(root, ".lake", "build", "bin", "delegus-check-model");
+
+/** Run one of the model's line-oriented modes (--htu, --jcs) on many inputs. */
+export function runLines(mode, lines) {
+  const out = execFileSync(exe, [mode], { input: `${lines.join("\n")}\n`, encoding: "utf8", maxBuffer: 1 << 28 });
+  return out.trim().split("\n").map((l) => JSON.parse(l));
+}
 
 /** Run the model on one input. */
 export function runModel(input, vector = "case") {
@@ -55,6 +62,15 @@ export const implementation = {
   isJti(value) {
     return execFileSync(exe, ["--is-jti", value], { encoding: "utf8" }).trim() === "true";
   },
+  normalizeHtu(value) {
+    return runLines("--htu", [JSON.stringify(value)])[0];
+  },
+  canonicalize(value) {
+    const r = runLines("--jcs", [JSON.stringify(value)])[0];
+    if (r === null) throw new Error("not canonicalizable");
+    return r;
+  },
+  sha256: sha256Utf8,
 };
 
 export default implementation;

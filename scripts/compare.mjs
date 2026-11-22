@@ -4,8 +4,8 @@
 //
 //   node scripts/compare.mjs [--engine <module>]
 //
-// 1. Checks that vectors/cases/ is byte-identical to the cases shipped in the
-//    pinned @delegus/conformance package.
+// 1. Checks that vectors/cases/ and vectors/sets/ are byte-identical to the
+//    cases and sets shipped in the pinned @delegus/conformance package.
 // 2. Checks that vectors/lowered/ is what scripts/lower.mjs produces, then runs
 //    the Lean model (.lake/build/bin/delegus-check-model) on the cases and
 //    their lowered primitive facts. The model computes every check itself.
@@ -50,6 +50,12 @@ const pkgNames = readdirSync(pkgCases).filter((f) => f.endsWith(".json")).sort()
 if (JSON.stringify(names) !== JSON.stringify(pkgNames)) fail(`case file list differs from @delegus/conformance@${pkgVersion}`);
 for (const n of names) {
   if (!readFileSync(join(casesDir, n)).equals(readFileSync(join(pkgCases, n)))) fail(`${n} differs from @delegus/conformance@${pkgVersion}`);
+}
+
+// 1b. The normalization sets too.
+const pkgSets = join(pkgDir, "vectors", "sets");
+for (const n of ["htu.json", "jcs.json", "jti.json"]) {
+  if (!readFileSync(join(root, "vectors", "sets", n)).equals(readFileSync(join(pkgSets, n)))) fail(`sets/${n} differs from @delegus/conformance@${pkgVersion}`);
 }
 
 // 2. The lowered facts are current, and the Lean model.

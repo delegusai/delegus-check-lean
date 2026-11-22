@@ -13,6 +13,51 @@ open DelegusCheck DelegusCheck.Vectors
 
 def expectedCount : Nat := 40
 
+/-- The three normalization sets, run on the model's own `normalizeHtu`,
+    `jcs` and `isJti`. Returns the number of failures. -/
+def runSets (dir : System.FilePath) : IO Nat := do
+  let mut bad := 0
+  let mut checked := 0
+  let read (n : String) : IO Json := do
+    match Json.parse (← IO.FS.readFile (dir / n)) with
+    | .ok j => pure j
+    | .error e => throw (IO.userError s!"{n}: {e}")
+  let htu ← read "htu.json"
+  for c in ((htu.getObjValD "normalize").getArr?.toOption.getD #[]) do
+    let input := (c.getObjValAs? String "input").toOption.getD ""
+    let want := (c.getObjValAs? String "canonical").toOption
+    checked := checked + 1
+    if normalizeHtu input != want then
+      IO.println s!"FAIL set htu {input}: model {repr (normalizeHtu input)}, set {repr want}"
+      bad := bad + 1
+  for c in ((htu.getObjValD "malformed").getArr?.toOption.getD #[]) do
+    let input := (c.getStr?).toOption.getD ""
+    checked := checked + 1
+    if (normalizeHtu input).isSome then
+      IO.println s!"FAIL set htu {input}: model accepts a malformed value"
+      bad := bad + 1
+  let jcsSet ← read "jcs.json"
+  for c in ((jcsSet.getObjValD "cases").getArr?.toOption.getD #[]) do
+    let input := (c.getObjValAs? String "input").toOption.getD ""
+    let want := (c.getObjValAs? String "canonical").toOption
+    let got := match Json.parse input with
+      | .ok j => jcs j
+      | .error _ => none
+    checked := checked + 1
+    if got != want then
+      IO.println s!"FAIL set jcs {input}: model {repr got}, set {repr want}"
+      bad := bad + 1
+  let jti ← read "jti.json"
+  for (k, expect) in [("valid", true), ("invalid", false)] do
+    for v in ((jti.getObjValD k).getArr?.toOption.getD #[]) do
+      let s := (v.getStr?).toOption.getD ""
+      checked := checked + 1
+      if isJti s != expect then
+        IO.println s!"FAIL set jti {s}: model {isJti s}, set {expect}"
+        bad := bad + 1
+  IO.println s!"sets: {checked - bad} of {checked} htu, JCS and jti checks pass on the model's own rules; {bad} failure(s)"
+  return bad
+
 def main (args : List String) : IO UInt32 := do
   let cases : System.FilePath := args.getD 0 "vectors/cases"
   let lowered : System.FilePath := args.getD 1 "vectors/lowered"
@@ -41,6 +86,7 @@ def main (args : List String) : IO UInt32 := do
       else
         IO.println s!"FAIL {l.id}: {String.intercalate "; " problems}"
         bad := bad + 1
+  bad := bad + (← runSets "vectors/sets")
   if files.size != expectedCount then
     IO.println s!"FAIL expected {expectedCount} cases in {cases}, found {files.size}"
     bad := bad + 1

@@ -12,6 +12,7 @@ Phase 1: the evaluator of `/verify` (§5), in two forms.
 `staged_eq_table` (in `Phase1.lean`) proves they are equal.
 -/
 import DelegusCheckSpec.Rules
+import DelegusCheckSpec.Jcs
 import DelegusCheckSpec.Kernel
 
 namespace DelegusCheck
@@ -35,7 +36,7 @@ def Env.proof (e : Env) : Option ProofF := parseProof e.π e.req.proof
 /-- P15's result. -/
 def Env.action (e : Env) : Option Action := validateAction e.req.action
 /-- §6.3 `request_hash`: SHA-256 of the UTF-8 of `JCS(action)`. -/
-def Env.requestHash (e : Env) : Option String := (e.π.jcs e.req.action).map e.π.sha256
+def Env.requestHash (e : Env) : Option String := (jcs e.req.action).map e.π.sha256
 /-- The replay operation for a Proof. -/
 def Env.query (e : Env) (p : ProofF) : ReplayQuery := replayQuery e.req.rp p.jti p.iat e.req.windowS
 

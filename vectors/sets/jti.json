@@ -1,0 +1,19 @@
+{
+  "description": "Proof jti format (§4.2): 22–64 ASCII characters; the engine requires the base64url alphabet (the SHOULD encoding of 16 random bytes), the only verifiable proxy for ≥128 random bits.",
+  "valid": [
+    "AAAAAAAAAAAAAAAAAAAAAA",
+    "abcdefghijklmnopqrstuv",
+    "-_-_-_-_-_-_-_-_-_-_-_",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA"
+  ],
+  "invalid": [
+    "",
+    "AAAAAAAAAAAAAAAAAAAAA",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "AAAAAAAAAAAAAAAAAAAAA=",
+    "AAAAAAAAAAAAAAAAAAAA+/",
+    "AAAAAAAAAAAAAAAAAAAA A",
+    "01J9X4QK7M3Y2Z8N6P5R4T3V2W!"
+  ]
+}

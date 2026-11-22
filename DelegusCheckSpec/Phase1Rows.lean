@@ -389,6 +389,24 @@ theorem p8_jti (h : (evaluate π req s tc clk ρ).result.checks.get .P8 = .pass)
   obtain ⟨_, _, _, _, _, hj, _⟩ := parseProof_sound hp
   exact ⟨p, hp, hj⟩
 
+/-- The `htu` rule is the model's own (§4.3): canonical means a fixed point
+    of `normalizeHtu`. -/
+theorem isCanonicalHtu_iff (t : String) : isCanonicalHtu t = true ↔ normalizeHtu t = some t := by
+  simp [isCanonicalHtu]
+
+theorem parseProof_htu {π : Prims} {t : String} {p : ProofF} (h : parseProof π t = some p) :
+    isCanonicalHtu p.htu = true := by
+  unfold parseProof at h
+  peel h
+  assumption
+
+/-- P8 passes only for a Proof whose `htu` is already in the §4.3 canonical
+    form, as the model itself computes it. -/
+theorem p8_htu (h : (evaluate π req s tc clk ρ).result.checks.get .P8 = .pass) :
+    ∃ p, parseProof π req.proof = some p ∧ normalizeHtu p.htu = some p.htu := by
+  obtain ⟨p, hp⟩ := proof_of_p8 h
+  exact ⟨p, hp, (isCanonicalHtu_iff _).mp (parseProof_htu hp)⟩
+
 /-! ## Threat model rows (§13.1) -/
 
 /-- TM-05: a Proof addressed to another RP is DENY (P12). -/
@@ -400,10 +418,10 @@ theorem tm05_other_rp_denies {p : ProofF} (hp : parseProof π req.proof = some p
     SHA-256 is injective and JCS is a canonical form (both hypotheses), any
     action the Agent hashed is the submitted one up to that canonical form. -/
 theorem tm06_action_bound (R : Json → Json → Prop)
-    (hinj : Function.Injective π.sha256) (hcanon : ∀ a b t, π.jcs a = some t → π.jcs b = some t → R a b)
+    (hinj : Function.Injective π.sha256) (hcanon : ∀ a b t, jcs a = some t → jcs b = some t → R a b)
     (h : (evaluate π req s tc clk ρ).result.decision = .allow) :
     ∃ p, parseProof π req.proof = some p ∧
-      ∀ b tb, π.jcs b = some tb → p.actionHash = π.sha256 tb → R req.action b := by
+      ∀ b tb, jcs b = some tb → p.actionHash = π.sha256 tb → R req.action b := by
   obtain ⟨p, hp, hr⟩ := request_hash_eq_action_hash ((allow_iff_every_check _).mp h .P14)
   refine ⟨p, hp, fun b tb hb hab => ?_⟩
   simp only [evaluate, evaluateWith, Env.requestHash, Option.map_eq_some_iff] at hr

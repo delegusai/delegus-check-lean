@@ -8,7 +8,9 @@
 //
 // It uses only the primitive functions of @delegus/core: strict JWS and JSON
 // decoding, base58 and base64url, Ed25519 verification and key safety,
-// SHA-256, RFC 8785 JCS, the htu canonical form, RFC 3339 parsing and GZIP.
+// SHA-256, RFC 3339 parsing and GZIP. (It also runs RFC 8785 JCS on the
+// Action, only to know which text to hash; the model computes JCS and the
+// htu canonical form itself.)
 // It never imports the evaluator, the Grant or Proof parsers or the
 // capability rules, so every decision is made by the Lean model.
 //
@@ -16,9 +18,8 @@
 // string inside the decoded Grant, Proof, status credential and DID
 // document, every candidate key, and every key × JWS pair. Anything not in a
 // table is answered "no" by the model (fail closed): the signature table
-// lists only the key × JWS pairs that verify, the htu table only the
-// strings already in canonical form, the time table only the strings that
-// parse.
+// lists only the key × JWS pairs that verify, the time table only the
+// strings that parse.
 //
 // --check: regenerate in memory and fail if the committed files differ.
 

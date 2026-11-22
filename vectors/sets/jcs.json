@@ -1,0 +1,47 @@
+{
+  "description": "RFC 8785 canonicalization of Action objects. `canonical` is the exact UTF-8 text hashed; `action_hash` is sha256 over it in the §6.3 encoding.",
+  "cases": [
+    {
+      "name": "commerce:purchase action from §5.1",
+      "input": "{\"type\":\"commerce:purchase\",\"resource\":\"order_92813\",\"amount\":42700,\"currency\":\"USD\"}",
+      "canonical": "{\"amount\":42700,\"currency\":\"USD\",\"resource\":\"order_92813\",\"type\":\"commerce:purchase\"}",
+      "action_hash": "sha256:f7efb258ad66b8dcb4aebac2a1c85070821031ab1fa6376b6fa19437f5de4053"
+    },
+    {
+      "name": "same action, different member order and whitespace",
+      "input": "{ \"currency\": \"USD\", \"amount\": 42700,\n \"type\": \"commerce:purchase\", \"resource\": \"order_92813\" }",
+      "canonical": "{\"amount\":42700,\"currency\":\"USD\",\"resource\":\"order_92813\",\"type\":\"commerce:purchase\"}",
+      "action_hash": "sha256:f7efb258ad66b8dcb4aebac2a1c85070821031ab1fa6376b6fa19437f5de4053"
+    },
+    {
+      "name": "api:call action",
+      "input": "{\"type\":\"api:call\",\"method\":\"GET\",\"resource\":\"https://api.seller.example/v1/orders/92813\"}",
+      "canonical": "{\"method\":\"GET\",\"resource\":\"https://api.seller.example/v1/orders/92813\",\"type\":\"api:call\"}",
+      "action_hash": "sha256:d27c677a108ca699a9afd400c8fdba5ad64b7c2223d2945956d55d6be1c61d9b"
+    },
+    {
+      "name": "nested, sorted by UTF-16 code units",
+      "input": "{\"b\":[3,1,{\"z\":null,\"a\":true}],\"a\":\"x\",\"A\":\"y\",\"10\":1,\"9\":2}",
+      "canonical": "{\"10\":1,\"9\":2,\"A\":\"y\",\"a\":\"x\",\"b\":[3,1,{\"a\":true,\"z\":null}]}",
+      "action_hash": "sha256:5f119feb1c7c5f6110d015800039844e7612df33cf396e8f7e4ac0cab07e1c30"
+    },
+    {
+      "name": "string escapes",
+      "input": "{\"s\":\"\\u00e9\\t\\\"\\\\\\/\\u001f\"}",
+      "canonical": "{\"s\":\"é\\t\\\"\\\\/\\u001f\"}",
+      "action_hash": "sha256:db9e7d23b80ab5f56c2f2f2a5a1623b4b6cdc82db496eee1cb85fb3862094b9e"
+    },
+    {
+      "name": "unicode keys (surrogate pair sorts before U+FB33)",
+      "input": "{\"\\ud83d\\ude02\":\"smiley\",\"\\ufb33\":\"dalet\",\"\\u20ac\":\"euro\"}",
+      "canonical": "{\"€\":\"euro\",\"😂\":\"smiley\",\"דּ\":\"dalet\"}",
+      "action_hash": "sha256:b79ecf2a84480a8f61e94f2ec602bbc89895c3f4e4bf933d3b72229b2d890ce6"
+    },
+    {
+      "name": "integers only in the protocol; JCS itself is RFC 8785 for any number",
+      "input": "{\"n\":[0,-0,1E2,4.50,2e-3,9007199254740991]}",
+      "canonical": "{\"n\":[0,0,100,4.5,0.002,9007199254740991]}",
+      "action_hash": "sha256:645f4b4d356d8c004be361caf15a917353699d6f6a5ae99dc4bcd502ee0dde87"
+    }
+  ]
+}

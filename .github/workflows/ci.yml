@@ -36,6 +36,8 @@ jobs:
         run: npx --no-install delegus-conformance --impl ./bridge/lean-impl.mjs
       - name: Mutation differential
         run: node scripts/differential.mjs
+      - name: htu and JCS against the engine
+        run: node scripts/primitives-differential.mjs
 
   latest:
     # Nightly: the same model against the latest published reference engine
@@ -60,3 +62,5 @@ jobs:
         run: node scripts/compare.mjs
       - name: Mutation differential against the latest engine
         run: node scripts/differential.mjs
+      - name: htu and JCS against the latest engine
+        run: node scripts/primitives-differential.mjs

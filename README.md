@@ -10,8 +10,8 @@ a precise model in Lean 4, a tool that checks mathematical proofs by
 machine, and proves properties of them that hold for every possible input,
 not only the cases we happened to test.
 
-Phases 0 to 5 are done; only the one-time-use window theorems wait (on erratum 4). Phase 0 proved the order of the checks, the
-yes-or-no answer and the reason given for a no. Phase 1 writes every one of
+Phases 0 to 6 are done; only the one-time-use window theorems wait, on
+erratum 4. Phase 0 proved the order of the checks, the yes-or-no answer and the reason given for a no. Phase 1 writes every one of
 the 24 checks as a real rule, field by field, and proves what the
 specification promises about the whole decision. Phase 2 ties the model to
 the real engine: the published conformance runner runs the model as an
@@ -20,7 +20,11 @@ proves that an old decision re-checks the same, years later. Phase 4 (the
 parts that do not depend on the replay window) proves where the service
 reads and writes its stores during a decision. Phase 5 proves that a
 cancelled Grant stays cancelled: once a revocation has been confirmed,
-every later check of that Grant, on any server, is a no.
+every later check of that Grant, on any server, is a no. Phase 6 writes two of
+the building blocks the model used to take on trust, the address
+clean-up for the Proof's target URL and the canonical form of the Action
+before it is fingerprinted, in Lean as well, and checks them against the
+engine on tens of thousands of inputs.
 
 ## What is proven
 
@@ -90,8 +94,11 @@ foundations; the full audit is under [Axiom audit](#axiom-audit).
 
 ## What is not proven
 
-- **Cryptography.** Signatures, fingerprints (hashes), canonical JSON and
-  decoding are inputs to the model, not part of it. Where a theorem needs
+- **Cryptography and decoding.** Signatures, fingerprints (hashes), key
+  checks and decoding (of the signed artifacts, keys, timestamps and the
+  compressed status lists) are inputs to the model, not part of it. The
+  target-URL clean-up (`htu`), the canonical JSON of the Action (JCS) and
+  the `jti` rule are written in Lean. Where a theorem needs
   "signatures cannot be forged" or "hashes do not collide", it says so as an
   explicit assumption.
 - **The live databases.** The revocation proof assumes the stores behave
@@ -133,12 +140,13 @@ The published conformance runner, with the model plugged in as the
 implementation under test:
 
 ```
-PASS: 40/40 vectors (0 receipts byte-identical), 1 sets passed, 2 skipped, 40/40 committed receipts re-verify offline
+PASS: 40/40 vectors (0 receipts byte-identical), 3 sets passed, 0 skipped, 40/40 committed receipts re-verify offline
 ```
 
-(The model signs no receipts, so none are compared. It supplies its own
-`jti` rule, which passes the `jti` set; the `htu` and JCS sets are skipped
-because in the model those are primitives.)
+(The model signs no receipts, so none are compared. The three sets are
+the `htu`, JCS and `jti` sets, run on the model's own rules; `lake test`
+runs them too: `sets: 51 of 51 htu, JCS and jti checks pass on the model's
+own rules`.)
 
 ## Altered cases
 
@@ -162,6 +170,20 @@ log; the model's from a recording run of its effectful evaluator.
 The mutants cover every reason code and both answers (108 ALLOW, 4195
 DENY).
 
+The model's own `htu` clean-up and JCS are also compared with the engine's
+on generated inputs (a fixed-seed generator: URIs with every kind of case,
+escape, port, query and fragment; JSON values with doubles at every scale,
+subnormals, overflow, long decimals, control characters, astral-plane
+characters and keys that sort differently by UTF-16):
+
+```
+40105 of 40105 agree with @delegus/core; 0 disagreement(s)
+```
+
+That run covers 20,000 URIs (14,100 valid) and 20,105 JSON values. It also
+checks, without proving it, that both functions are idempotent on their own
+output.
+
 ## How to re-run it
 
 You need [elan](https://github.com/leanprover/elan) (the Lean version
@@ -177,6 +199,7 @@ npm ci --ignore-scripts         # the reference engine, pinned: @delegus/conform
 node scripts/compare.mjs        # model and engine, case by case
 npx --no-install delegus-conformance --impl ./bridge/lean-impl.mjs   # the published runner, with the model plugged in
 node scripts/differential.mjs   # model and engine on about 4,300 altered cases
+node scripts/primitives-differential.mjs   # the model's htu and JCS against the engine's
 ```
 
 `lake build` fails if any proof is wrong. Every other command exits
@@ -218,6 +241,9 @@ To print the model's answer for each case, one JSON object per line:
 | `scripts/lowering.mjs`, `scripts/lower.mjs` | The lowering: the primitive facts for a case, and the command that writes `vectors/lowered/` |
 | `bridge/lean-impl.mjs` | The model as an `Implementation` for the `@delegus/conformance` runner |
 | `scripts/differential.mjs` | The mutation differential |
+| `scripts/primitives-differential.mjs` | The model's `htu` and JCS against the engine's, on generated inputs |
+| `DelegusCheckSpec/Htu.lean`, `DelegusCheckSpec/Jcs.lean` | Phase 6: the §4.3 `htu` canonical form and RFC 8785 JCS, in Lean |
+| `vectors/sets/` | The `htu`, JCS and `jti` sets, byte for byte from `@delegus/conformance` 0.4.0 |
 | `.github/workflows/ci.yml` | CI on push and nightly against the latest `@delegus/conformance`; off until the repository variable `CI_ENABLED` is `true` |
 | `scripts/compare.mjs` | Model against the reference engine, live, on all 40 cases |
 | `scripts/check-axioms.sh` | `#print axioms` for every theorem, failing on anything but the standard three |
@@ -247,9 +273,15 @@ ones §0 constraint 2 and §5.2 name:
 
 Cryptography and decoding are the parameter `π : Prims`: strict JWS
 decoding, strict JSON parsing, `did:key` and multibase key decoding, key
-safety (erratum 3), Ed25519 verification, SHA-256, RFC 8785 JCS, the `htu`
-canonical form, RFC 3339 parsing, and status-list decoding. Every theorem
-holds for every `π`.
+safety (erratum 3), Ed25519 verification, SHA-256, RFC 3339 parsing, and
+status-list decoding. Every theorem holds for every `π`. The `htu`
+canonical form (`normalizeHtu`), RFC 8785 JCS (`jcs`) and the `jti` rule
+(`isJti`) are computed by the model.
+
+`jcs` works on exact integers: a JSON number's decimal value is rounded to
+the nearest double (ties to even, with subnormals and overflow), and the
+shortest decimal that rounds back is printed in ECMAScript's
+`Number::toString` format, with no floating point anywhere.
 
 Each check's own rule is `base e k`. `table` runs it only when every
 prerequisite is `true` (`enginePrereq`); `staged` is written as the engine
@@ -288,6 +320,7 @@ All in namespace `DelegusCheck`. Main Phase 1 statements (`r` is
 | `integers_only` | ALLOW → every number in the Action is an integer |
 | `key_rotation` | T3 fails exactly for a compromised `kid`; a retired key passes (§11) |
 | `isJti_iff`, `p8_jti` | the `jti` format, and P8 `true` → the Proof's `jti` has it |
+| `isCanonicalHtu_iff`, `p8_htu` | canonical means a fixed point of the model's `normalizeHtu`, and P8 `true` → the Proof's `htu` is one |
 | `tm05_…` to `tm13_…` | the §13.1 rows TM-05, TM-07, TM-08, TM-09, TM-11, TM-12, TM-13 as DENY statements |
 | `tm01_grant_signed`, `tm03_proof_signed_by_agent`, `tm06_action_bound` | TM-01/02, TM-03 and TM-06 under the explicit hypotheses that a verifying signature under a safe key means its holder signed, and that SHA-256 is injective and JCS canonical |
 
@@ -447,6 +480,9 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.key_rotation' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.isJti_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.p8_jti' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.isCanonicalHtu_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.parseProof_htu' depends on axioms: [propext, Classical.choice, Quot.sound]
+'DelegusCheck.p8_htu' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm05_other_rp_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm06_action_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
 'DelegusCheck.tm07_outside_window_denies' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -527,7 +563,7 @@ Output of `./scripts/check-axioms.sh` with Lean 4.36.0, every theorem in
 'DelegusCheck.enginePrereq_backward' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.exactB_sound' depends on axioms: [propext, Quot.sound]
 'DelegusCheck.wellCodedB_sound' depends on axioms: [propext, Quot.sound]
-OK: 178 theorems, standard axioms only
+OK: 181 theorems, standard axioms only
 ```
 
 `propext`, `Quot.sound` and `Classical.choice` are Lean's three standard
@@ -537,8 +573,10 @@ axioms. `sorryAx` appears nowhere.
 
 `scripts/lower.mjs` computes only primitive facts, using only the primitive
 functions of `@delegus/core` 0.3.2 (strict JWS and JSON decoding, base58 and
-base64url, Ed25519 verification and key safety, SHA-256, JCS, the `htu`
-canonical form, RFC 3339 parsing, GZIP). It never imports the engine's
+base64url, Ed25519 verification and key safety, SHA-256, RFC 3339 parsing,
+GZIP). It also runs the engine's JCS on the Action, but only to know which
+text to fingerprint: the model computes its own JCS, and the fingerprint is
+found only if the two texts are identical. It never imports the engine's
 evaluator, Grant or Proof parsers or capability rules. The facts are tables
 over every value the model could ask about: every string inside the decoded
 Grant, Proof, status credential and DID document, every candidate key, every
@@ -647,6 +685,15 @@ default 60). A receipt for an RP with a non-default window cannot be fully
 re-verified from the receipt and its artifacts alone. This is a gap in the
 text, not a change; recording the window in the receipt would be a v0.3 or
 erratum question for the owner.
+
+**Found while writing `htu` in Lean (Phase 6).** §4.3 says percent-escapes
+are normalized with uppercase hex. The engine lowercases the whole host
+after normalizing it, so an escape in the host comes out lowercase
+(`https://a%2Fb/` becomes `https://a%2fb/`), while escapes in the path are
+uppercase. The model follows the engine, so a Proof's `htu` with an escaped
+host must use lowercase hex to be canonical. No published case has an
+escaped host. This is a reading for the owner: either the text or the
+engine is off.
 
 **Engine readings the specification leaves open**:
 

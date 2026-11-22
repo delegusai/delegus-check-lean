@@ -9,7 +9,8 @@ service DID and the service state the three hot-path operations observe.
 The lowered file (`vectors/lowered/<id>.json`, written by
 `scripts/lower.mjs`) supplies only primitive facts: decoded JWS, parsed JSON,
 decoded keys, key safety, which key × JWS pairs verify, SHA-256, JCS, the
-htu canonical form, RFC 3339 times and decoded status bitstrings.
+RFC 3339 times and decoded status bitstrings. (The `htu` canonical form,
+JCS and the `jti` rule are computed by the model itself.)
 
 Nothing here reads the case's expected results except `expected`, which only
 the test driver compares against. The model computes all 24 checks, the
@@ -36,10 +37,7 @@ structure Facts where
   keyOk : List (PubKey × Bool)
   /-- Key × (signing input, signature) pairs that verify. -/
   sig : List (PubKey × String × String)
-  /-- (compressed action, JCS text). -/
-  jcs : Option (String × String)
   sha256 : List (String × String)
-  htu : List String
   time : List (String × Int)
   list : List (String × ByteArray)
   statusKeys : List (String × PubKey)
@@ -56,10 +54,6 @@ def Facts.prims (f : Facts) : Prims where
   keyOk k := (lookup f.keyOk k).getD false
   sigOk k m σ := f.sig.any fun (e : PubKey × String × String) => e.1 == k && e.2.1 == m && e.2.2 == σ
   sha256 t := (lookup f.sha256 t).getD "sha256:unknown"
-  jcs j := match f.jcs with
-    | some (c, t) => if j.compress == c then some t else none
-    | none => none
-  htuCanon s := f.htu.contains s
   rfc3339 s := lookup f.time s
   decodeList s := lookup f.list s
 
@@ -74,7 +68,7 @@ def bitstring (bytes : Nat) (set : List Nat) : ByteArray := Id.run do
 def pair (k v : String) (e : Json) : Except String (String × String) := do
   return (← getStr e k, ← getStr e v)
 
-def parseFacts (j : Json) (action : Json) : Except String Facts := do
+def parseFacts (j : Json) : Except String Facts := do
   let p ← j.getObjVal? "prims"
   let jws ← (← getArr p "jws").toList.mapM fun e => do
     let w : Jws := { header := ← e.getObjVal? "header", payload := ← e.getObjVal? "payload",
@@ -89,11 +83,7 @@ def parseFacts (j : Json) (action : Json) : Except String Facts := do
     match jws[i]? with
     | some (_, w) => return (← getStr e "pub", w.signingInput, w.signature)
     | none => throw "sig: bad jws index"
-  let jcs := match p.getObjValD "jcs" with
-    | .str t => some (action.compress, t)
-    | _ => none
   let sha256 ← (← getArr p "sha256").toList.mapM (pair "text" "hash")
-  let htu ← (← getArr p "htu").toList.mapM fun e => e.getStr?
   let time ← (← getArr p "time").toList.mapM fun e => do return (← getStr e "s", ← e.getObjValAs? Int "ms")
   let list ← (← getArr p "list").toList.mapM fun e => do
     let set ← (← getArr e "set").toList.mapM fun x => x.getNat?
@@ -102,7 +92,7 @@ def parseFacts (j : Json) (action : Json) : Except String Facts := do
     match e with
     | .arr #[.str k, .str v] => pure (k, v)
     | _ => throw "statusKeys entry"
-  return { jws, json, didKey, multibase, keyOk, sig, jcs, sha256, htu, time, list, statusKeys }
+  return { jws, json, didKey, multibase, keyOk, sig, sha256, time, list, statusKeys }
 
 /-! ## The case inputs -/
 
@@ -124,7 +114,7 @@ def loadCase (caseText loweredText : String) : Except String Loaded := do
   if (getStr l "vector").toOption.getD "case" != id then throw s!"{id}: lowered file is for another case"
   let input ← c.getObjVal? "input"
   let action ← input.getObjVal? "action"
-  let facts ← parseFacts l action
+  let facts ← parseFacts l
   let π := facts.prims
   let req : Request := {
     grant := ← getStr input "grant", proof := ← getStr input "proof", action,

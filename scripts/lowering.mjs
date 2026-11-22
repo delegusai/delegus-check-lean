@@ -8,7 +8,7 @@
 import { gunzipSync } from "node:zlib";
 import {
   parseCompactJws, parseJson, decodeBase58, encodeBase58, decodeBase64Url, isUsableEd25519PublicKey,
-  verifyEd25519, sha256Utf8, canonicalize, isCanonicalHtu, parseRfc3339Utc,
+  verifyEd25519, sha256Utf8, canonicalize, parseRfc3339Utc,
 } from "@delegus/core";
 
 const hex = (b) => Buffer.from(b).toString("hex");
@@ -88,15 +88,16 @@ export function lower(file) {
     });
   }
 
-  let jcs = null;
-  try { jcs = canonicalize(input.action); } catch { jcs = null; }
-  const sha256 = jcs === null ? [] : [{ text: jcs, hash: sha256Utf8(jcs) }];
+  // SHA-256 is a primitive of the model; JCS is not. The table carries the
+  // hash of the engine's JCS text of the Action, so it is found only if the
+  // model's own JCS produces the same text.
+  let jcsText = null;
+  try { jcsText = canonicalize(input.action); } catch { jcsText = null; }
+  const sha256 = jcsText === null ? [] : [{ text: jcsText, hash: sha256Utf8(jcsText) }];
 
-  const htu = [];
   const time = [];
   const list = [];
   for (const s of all) {
-    if (isCanonicalHtu(s)) htu.push(s);
     const ms = parseRfc3339Utc(s);
     if (ms !== null) time.push({ s, ms });
     if (s.startsWith("u")) {
@@ -118,7 +119,7 @@ export function lower(file) {
     vector: file.vector,
     lowering: "delegus-check-lean lowering v1",
     statusKeys,
-    prims: { jws, json, didKey, multibase, keyOk, sig, jcs, sha256, htu, time, list },
+    prims: { jws, json, didKey, multibase, keyOk, sig, sha256, time, list },
   };
 }
 
